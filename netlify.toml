@@ -13,8 +13,14 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
 
+# Auto Trader — runs at 08:30 BKK (01:30 UTC) and 14:30 BKK (07:30 UTC) on weekdays
 [functions."autotrade"]
-  schedule = "30 8 * * 1-5"
+  schedule = "30 1,7 * * 1-5"
 
+# Multi-agent AI council
 [functions."agents"]
+  node_bundler = "esbuild"
+
+# Manual trigger endpoint — no schedule, HTTP only
+[functions."autotrader-trigger"]
   node_bundler = "esbuild"

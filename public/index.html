@@ -425,6 +425,49 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 
 <div class="right">
 
+  <!-- AUTO TRADER PANEL -->
+  <div class="panel" id="autoTraderPanel">
+    <div class="ph">
+      <span class="ph-t">🤖 AUTO TRADER</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="atStatusDot" style="width:9px;height:9px;border-radius:50%;background:var(--dim);display:inline-block"></span>
+        <span id="atStatusText" style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim)">IDLE</span>
+      </div>
+    </div>
+    <div style="padding:14px 18px">
+      <!-- Rule summary -->
+      <div style="background:rgba(0,0,0,.35);border:1px solid rgba(255,193,7,.1);border-radius:8px;padding:12px;margin-bottom:14px;font-family:'Share Tech Mono',monospace;font-size:12px;line-height:1.9">
+        <div style="color:var(--gold);font-weight:bold;margin-bottom:6px">📋 กฎการซื้อขาย (Rule-based)</div>
+        <div><span style="color:var(--red)">🔴 CUT LOSS</span> — ขายทันที ถ้า P/L ≤ <strong id="ruleCutLoss">-70%</strong></div>
+        <div><span style="color:var(--yellow)">🟠 DEEP CUT</span> — ขายทันที ถ้า P/L ≤ <strong id="ruleDeepCut">-50%</strong></div>
+        <div><span style="color:var(--green)">🟢 TAKE PROFIT</span> — แจ้งเตือน ถ้า P/L ≥ <strong id="ruleTakeProfit">+30%</strong></div>
+        <div><span style="color:var(--accent)">🔵 DCA ZONE</span> — แจ้งเตือน ถ้า P/L อยู่ระหว่าง -40% ถึง -20%</div>
+        <div style="color:var(--dim);margin-top:4px">⚠️ Max 3 sells/run | ใช้ MP-MTL (Market Order)</div>
+      </div>
+
+      <!-- Action buttons -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+        <button onclick="triggerAutoTrader('analyze')" id="btnAnalyze"
+          style="flex:1;min-width:130px;background:rgba(0,229,255,.08);border:1px solid var(--accent);color:var(--accent);font-family:'Share Tech Mono',monospace;font-size:12px;padding:10px;border-radius:8px;cursor:pointer;font-weight:bold">
+          🔍 วิเคราะห์พอร์ต<br><span style="font-size:10px;opacity:.7">ไม่ซื้อขายจริง</span>
+        </button>
+        <button onclick="confirmExecute()" id="btnExecute"
+          style="flex:1;min-width:130px;background:rgba(255,23,68,.08);border:1px solid var(--red);color:var(--red);font-family:'Share Tech Mono',monospace;font-size:12px;padding:10px;border-radius:8px;cursor:pointer;font-weight:bold">
+          ⚡ ส่ง Order จริง<br><span style="font-size:10px;opacity:.7">Cut Loss ทันที</span>
+        </button>
+        <button onclick="triggerAutoTrader('dry_run')" id="btnDryRun"
+          style="flex:1;min-width:130px;background:rgba(255,234,0,.05);border:1px solid rgba(255,234,0,.3);color:var(--yellow);font-family:'Share Tech Mono',monospace;font-size:12px;padding:10px;border-radius:8px;cursor:pointer;font-weight:bold">
+          📋 Dry Run<br><span style="font-size:10px;opacity:.7">Log เท่านั้น</span>
+        </button>
+      </div>
+
+      <!-- Results area -->
+      <div id="atResult" style="min-height:60px;font-size:14px;line-height:1.8">
+        <div style="color:var(--dim)">กด "วิเคราะห์พอร์ต" เพื่อดูว่าบอทจะทำอะไร</div>
+      </div>
+    </div>
+  </div>
+
   <!-- SUMMARY -->
   <div class="panel">
     <div class="ph"><span class="ph-t">📊 ภาพรวมพอร์ต</span></div>
@@ -1413,6 +1456,151 @@ window.addEventListener('load', function(){
 // Initial render
 setTimeout(renderGameBar, 800);
 setTimeout(()=>{ if(GAME.level > 1) addLog('ok','ยินดีต้อนรับกลับมา LV.'+GAME.level+' '+getLevelTitle(GAME.level)); }, 1000);
+
+// ══════════════════════════════════════════════════════════
+//  AUTO TRADER UI
+// ══════════════════════════════════════════════════════════
+const AT_ACTION_LABELS = {
+  SELL_CUT_LOSS:     { icon:'🔴', label:'CUT LOSS',       color:'var(--red)' },
+  SELL_DEEP_CUT:     { icon:'🟠', label:'DEEP CUT',       color:'#ff9100' },
+  TAKE_PROFIT_ALERT: { icon:'🟢', label:'TAKE PROFIT ✓',  color:'var(--green)' },
+  DCA_SIGNAL:        { icon:'🔵', label:'DCA SIGNAL',     color:'var(--accent)' },
+  HOLD:              { icon:'⚪', label:'HOLD',            color:'var(--dim)' },
+};
+
+function setAtStatus(state, msg) {
+  const dot  = document.getElementById('atStatusDot');
+  const text = document.getElementById('atStatusText');
+  if(!dot || !text) return;
+  const colors = { idle:'var(--dim)', running:'var(--accent)', done:'var(--green)', error:'var(--red)' };
+  dot.style.background = colors[state] || colors.idle;
+  dot.style.boxShadow  = state==='running' ? '0 0 8px var(--accent)' : state==='done' ? '0 0 6px var(--green)' : 'none';
+  dot.style.animation  = state==='running' ? 'pulse 1s infinite' : 'none';
+  text.textContent = msg;
+  text.style.color = colors[state] || 'var(--dim)';
+}
+
+function setBtnsDisabled(v) {
+  ['btnAnalyze','btnExecute','btnDryRun'].forEach(id=>{
+    const b = document.getElementById(id);
+    if(b) b.disabled = v;
+  });
+}
+
+function confirmExecute() {
+  const hasSells = PORTFOLIO.filter(p => ((p.mkt - p.avg) / p.avg * 100) <= -50).length;
+  if(hasSells === 0){
+    showToast('ไม่มีหุ้นที่ถึงเกณฑ์ Cut Loss (-50%)', 'warn');
+    return;
+  }
+  const msg = `จะส่ง Market Order ขายหุ้นที่ขาดทุน ≤ -50% จำนวนสูงสุด 3 ตัว\nยืนยัน?`;
+  if(confirm(msg)) triggerAutoTrader('execute');
+}
+
+async function triggerAutoTrader(mode) {
+  setAtStatus('running', mode.toUpperCase() + '...');
+  setBtnsDisabled(true);
+  const el = document.getElementById('atResult');
+  el.innerHTML = '<div style="display:flex;gap:10px;align-items:center;color:var(--accent)"><div class="thinking-dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div><span>Auto Trader กำลังวิเคราะห์...</span></div>';
+
+  try {
+    const res = await originalFetch('/api/autotrader-trigger?mode=' + mode, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if(data.error && !data.analyzed) throw new Error(data.error);
+
+    renderAtResult(data, mode);
+    setAtStatus('done', mode === 'execute' ? `✅ SOLD ${data.orders_placed?.length||0}` : '✅ DONE');
+    addLog('ok', `🤖 AutoTrader [${mode}]: ${data.analyzed?.length||0} วิเคราะห์, ${data.orders_placed?.length||0} ขาย`);
+    addXP(mode === 'execute' ? 50 : 20);
+    renderGameBar();
+    if(data.orders_placed?.length > 0 && mode === 'execute') {
+      showToast(`✅ ขายแล้ว ${data.orders_placed.length} หุ้น`, 'ok');
+      unlockAchievement('first_trade');
+    }
+  } catch(err) {
+    el.innerHTML = `<div style="color:var(--red)">❌ ${err.message}</div>`;
+    setAtStatus('error', '❌ ERROR');
+    addLog('err', '🤖 AutoTrader error: ' + err.message);
+  } finally {
+    setBtnsDisabled(false);
+  }
+}
+
+function renderAtResult(data, mode) {
+  const el = document.getElementById('atResult');
+  if(!data.analyzed || data.analyzed.length === 0) {
+    el.innerHTML = '<div style="color:var(--dim)">ไม่มีข้อมูลพอร์ต — ตรวจสอบ INVX Keys</div>';
+    return;
+  }
+
+  const sells = data.orders_placed || [];
+  const failed = data.orders_failed || [];
+  const alerts = data.alerts || [];
+  const analyzed = data.analyzed || [];
+
+  let html = '';
+
+  // Action table
+  html += '<div style="margin-bottom:12px">';
+  html += '<div style="font-family:monospace;font-size:11px;color:var(--gold);margin-bottom:8px;font-weight:bold">📊 ผลวิเคราะห์ทุกหุ้น</div>';
+
+  // Group by action
+  const groups = {};
+  analyzed.forEach(s => {
+    if(!groups[s.action]) groups[s.action] = [];
+    groups[s.action].push(s);
+  });
+
+  const ORDER = ['SELL_CUT_LOSS','SELL_DEEP_CUT','TAKE_PROFIT_ALERT','DCA_SIGNAL','HOLD'];
+  ORDER.forEach(act => {
+    const group = groups[act];
+    if(!group || group.length === 0) return;
+    const meta = AT_ACTION_LABELS[act] || {icon:'•',label:act,color:'var(--dim)'};
+    html += `<div style="margin-bottom:8px">`;
+    html += `<div style="color:${meta.color};font-family:monospace;font-size:11px;font-weight:bold;margin-bottom:4px">${meta.icon} ${meta.label} (${group.length})</div>`;
+    group.forEach(s => {
+      const sign = s.pnlPct >= 0 ? '+' : '';
+      html += `<div style="display:flex;justify-content:space-between;padding:3px 8px;background:rgba(255,255,255,.03);border-radius:4px;margin-bottom:2px;font-size:13px">`;
+      html += `<span style="color:var(--gold);font-family:monospace;font-weight:bold">${s.sym}</span>`;
+      html += `<span style="color:${s.pnlPct>=0?'var(--green)':'var(--red)'}">${sign}${s.pnlPct}%</span>`;
+      html += `<span style="color:var(--dim);font-size:11px">${s.qty} หุ้น @ ${s.mkt}</span>`;
+      html += `</div>`;
+    });
+    html += `</div>`;
+  });
+  html += '</div>';
+
+  // Orders placed
+  if(sells.length > 0) {
+    const verb = mode === 'execute' ? '✅ ขายแล้ว' : '📋 จะขาย (simulate)';
+    html += `<div style="background:rgba(255,23,68,.07);border:1px solid rgba(255,23,68,.2);border-radius:8px;padding:10px;margin-bottom:10px">`;
+    html += `<div style="color:var(--red);font-family:monospace;font-size:12px;font-weight:bold;margin-bottom:6px">${verb}</div>`;
+    sells.forEach(o => {
+      html += `<div style="font-size:13px;padding:3px 0"><strong style="color:var(--gold)">${o.sym}</strong> × ${o.qty} หุ้น @ MP-MTL`;
+      if(o.orderId && o.orderId !== 'DRY_RUN') html += ` <span style="color:var(--dim);font-size:11px">(ID: ${o.orderId})</span>`;
+      html += `</div>`;
+    });
+    html += '</div>';
+  }
+
+  if(failed.length > 0) {
+    html += `<div style="color:var(--red);font-size:13px;margin-bottom:8px">❌ ส่ง Order ไม่สำเร็จ: ${failed.map(o=>o.sym+' ('+o.error+')').join(', ')}</div>`;
+  }
+
+  // AI summary
+  if(data.summary) {
+    html += `<div style="background:rgba(255,193,7,.04);border:1px solid rgba(255,193,7,.15);border-radius:8px;padding:10px;font-size:13px;line-height:1.8">`;
+    html += `<div style="color:var(--gold);font-family:monospace;font-size:11px;font-weight:bold;margin-bottom:6px">🧠 สรุป AI</div>`;
+    html += data.summary.replace(/\n/g,'<br>');
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
 
 </script>
 </body>

@@ -36,39 +36,66 @@ async function tgPost(method, data) {
   });
 }
 
-// ── Claude AI ──
+// ── Gemini AI (gemini-1.5-flash with 429 retry) ──
+function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
 async function askClaude(system, message) {
-  // ใช้ Gemini API (ฟรี)
   const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
-  const GEMINI_MODEL = 'gemini-2.0-flash';
+  const GEMINI_MODEL = 'gemini-1.5-flash';
+  if (!GEMINI_KEY) return '⚠️ ไม่พบ GEMINI_API_KEY';
+
   const prompt = system ? system + '\n\n---\n\n' + message : message;
   const postData = JSON.stringify({
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: { maxOutputTokens: 1000, temperature: 0.7 }
   });
-  return new Promise((resolve, reject) => {
-    const opts = {
-      hostname: 'generativelanguage.googleapis.com',
-      path: '/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + GEMINI_KEY,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-    };
-    const req = https.request(opts, res => {
-      let d = '';
-      res.on('data', c => d += c);
-      res.on('end', () => {
-        try {
-          const p = JSON.parse(d);
-          const text = p.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (text) resolve(text);
-          else reject(new Error(p.error?.message || 'Gemini: no content - ' + d.slice(0,100)));
-        } catch(e) { reject(new Error('Parse error')); }
+
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 2000;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const result = await new Promise((resolve) => {
+      const opts = {
+        hostname: 'generativelanguage.googleapis.com',
+        path: '/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + GEMINI_KEY,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+      };
+      const req = https.request(opts, res => {
+        let d = '';
+        res.on('data', c => d += c);
+        res.on('end', () => resolve({ statusCode: res.statusCode, body: d }));
       });
+      req.on('error', (err) => resolve({ statusCode: 0, body: '', error: err.message }));
+      req.setTimeout(9000, () => { req.destroy(); resolve({ statusCode: 0, body: '', error: 'timeout' }); });
+      req.write(postData);
+      req.end();
     });
-    req.on('error', reject);
-    req.write(postData);
-    req.end();
-  });
+
+    if (result.error === 'timeout') {
+      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS); continue; }
+      return '⚠️ Timeout — AI ยุ่งมาก';
+    }
+    if (result.error) {
+      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS); continue; }
+      return `⚠️ Network error: ${result.error}`;
+    }
+    if (result.statusCode === 429) {
+      console.warn(`[Gemini/telegram] 429 rate-limit on attempt ${attempt}`);
+      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS * attempt); continue; }
+      return '⚠️ Gemini quota หมด กรุณาลองใหม่ภายหลัง';
+    }
+
+    try {
+      const p = JSON.parse(result.body);
+      const text = p.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) return text;
+      return '⚠️ ' + (p.error?.message || 'Gemini: ไม่ได้รับคำตอบ');
+    } catch(e) {
+      return '⚠️ Parse error';
+    }
+  }
+  return '⚠️ Max retries exceeded';
 }
 
 // ── ดึงข้อมูล InnovestX ──
