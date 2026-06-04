@@ -1,0 +1,1419 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Investment Avengers v8 — AI Council Edition</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Share+Tech+Mono&family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --gold:#ffc107;--accent:#00e5ff;--green:#00e676;--red:#ff1744;
+  --yellow:#ffea00;--dim:#546e7a;--panel:rgba(6,9,18,0.95);
+  --border:rgba(255,193,7,0.18);--dark:#030508;
+}
+html,body{min-height:100vh;background:#050810;color:#d0daf0;font-family:'Sarabun',sans-serif;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.04) 4px)}
+
+/* ── HEADER ── */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;
+  background:var(--dark);border-bottom:2px solid var(--gold);position:sticky;top:0;z-index:200}
+.logo{font-family:'Cinzel',serif;font-size:18px;color:var(--gold);text-shadow:0 0 16px rgba(255,193,7,.5);letter-spacing:2px;font-weight:bold}
+.hdr-r{display:flex;align-items:center;gap:16px;font-size:14px;font-family:'Share Tech Mono',monospace}
+.sd{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:5px;animation:pulse 2s infinite}
+.sg{background:var(--green);box-shadow:0 0 8px var(--green)}.sr{background:var(--red);box-shadow:0 0 8px var(--red);animation-delay:.5s}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── API BAR ── */
+.api-bar{background:rgba(0,0,0,.4);border-bottom:1px solid var(--border);padding:10px 24px;
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.api-inp{background:var(--dark);border:1px solid rgba(255,193,7,.3);border-radius:6px;
+  padding:8px 14px;color:#d0daf0;font-family:'Share Tech Mono',monospace;font-size:14px;width:280px;outline:none}
+.api-inp:focus{border-color:var(--gold)}
+.api-btn{background:rgba(255,193,7,.1);border:1px solid var(--gold);color:var(--gold);
+  font-family:'Share Tech Mono',monospace;font-size:12px;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:bold}
+.api-btn:hover{background:rgba(255,193,7,.2)}
+.api-st{font-size:14px;font-family:'Share Tech Mono',monospace}
+
+/* ── TICKER ── */
+.ticker{background:var(--dark);border-bottom:1px solid var(--border);height:32px;overflow:hidden;display:flex;align-items:center}
+.ticker-t{display:flex;gap:48px;animation:tk 35s linear infinite;white-space:nowrap;padding:0 20px;font-size:14px;font-family:'Share Tech Mono',monospace}
+@keyframes tk{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+
+/* ── MAIN LAYOUT ── */
+.wrap{display:grid;grid-template-columns:1fr 450px;gap:16px;padding:16px;max-width:1800px;margin:0 auto}
+.left{display:flex;flex-direction:column;gap:16px}
+.right{display:flex;flex-direction:column;gap:16px}
+
+/* ── PANEL ── */
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;backdrop-filter:blur(8px)}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--border)}
+.ph-t{font-family:'Share Tech Mono',monospace;font-size:14px;color:var(--gold);letter-spacing:1px;font-weight:bold}
+.blv{font-family:'Share Tech Mono',monospace;font-size:10px;padding:4px 10px;border-radius:12px;
+  background:rgba(0,230,118,.07);color:var(--green);border:1px solid rgba(0,230,118,.25);animation:pulse 2s infinite}
+
+/* ── OFFICE ── */
+#officeCanvas{display:block;image-rendering:auto;width:100%;cursor:pointer}
+.mkt-pill{font-family:'Share Tech Mono',monospace;font-size:12px;padding:4px 12px;border-radius:6px;font-weight:bold}
+.mkt-o{background:rgba(0,230,118,.12);color:var(--green);border:1px solid rgba(0,230,118,.35)}
+.mkt-c{background:rgba(255,23,68,.08);color:var(--red);border:1px solid rgba(255,23,68,.3)}
+
+/* ── EXPERT ROW ── */
+.exp-row{display:flex;gap:8px;padding:12px;overflow-x:auto;border-bottom:1px solid var(--border)}
+.exp-row::-webkit-scrollbar{height:4px}.exp-row::-webkit-scrollbar-thumb{background:rgba(255,193,7,.3)}
+.exp-btn{flex-shrink:0;display:flex;align-items:center;gap:8px;background:rgba(255,193,7,.04);
+  border:1px solid var(--border);border-radius:18px;padding:6px 14px 6px 8px;cursor:pointer;transition:all .2s}
+.exp-btn:hover,.exp-btn.active{border-color:var(--gold);background:rgba(255,193,7,.15)}
+.exp-btn canvas{height:38px;width:auto;image-rendering:auto}
+.exp-btn-name{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--gold);white-space:nowrap;font-weight:bold}
+
+/* ── DAILY BRIEFING ── */
+.brief-box{padding:18px;background:rgba(255,193,7,.03);border-bottom:1px solid var(--border)}
+.brief-content{font-size:16px;line-height:1.9;color:#d0daf0;max-height:200px;overflow-y:auto}
+.brief-content::-webkit-scrollbar{width:4px}.brief-content::-webkit-scrollbar-thumb{background:rgba(255,193,7,.3)}
+.brief-loading{color:var(--dim);font-size:15px;font-style:italic;animation:pulse 1s infinite}
+
+/* ── EXPERT ANALYSIS TABS ── */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border)}
+.tab{flex:1;text-align:center;padding:12px 8px;font-family:'Share Tech Mono',monospace;font-size:13px;
+  color:var(--dim);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;background:none;border-top:none;border-left:none;border-right:none;font-weight:bold}
+.tab:hover{color:var(--text)}.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tab-content{display:none;padding:16px 20px;font-size:16px;line-height:1.9;max-height:280px;overflow-y:auto}
+.tab-content.active{display:block}
+.tab-content::-webkit-scrollbar{width:4px}.tab-content::-webkit-scrollbar-thumb{background:rgba(255,193,7,.3)}
+
+/* ── CHAT ── */
+.chat-wrap{padding:0 16px 16px}
+.chat-box{min-height:120px;max-height:250px;overflow-y:auto;background:rgba(3,5,8,.9);
+  border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:12px;
+  font-size:16px;line-height:1.8}
+.chat-box::-webkit-scrollbar{width:4px}.chat-box::-webkit-scrollbar-thumb{background:rgba(255,193,7,.3)}
+.inp-row{display:flex;gap:10px}
+.c-inp{flex:1;background:rgba(3,5,8,.9);border:1px solid rgba(255,193,7,.25);border-radius:8px;
+  padding:12px 16px;color:#d0daf0;font-family:'Sarabun',sans-serif;font-size:16px;outline:none}
+.c-inp:focus{border-color:var(--gold)}
+.send-btn{background:rgba(255,193,7,.08);border:1px solid var(--gold);color:var(--gold);
+  font-family:'Share Tech Mono',monospace;font-size:13px;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:bold}
+.send-btn:hover{background:rgba(255,193,7,.2)}.send-btn:disabled{opacity:.3;cursor:not-allowed}
+
+/* ── PORTFOLIO TABLE ── */
+.tbl{width:100%;border-collapse:collapse;font-size:15px}
+.tbl th{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--dim);
+  padding:10px 12px;border-bottom:1px solid var(--border);background:var(--dark);text-align:left}
+.tbl th.r,.tbl td.r{text-align:right}
+.tbl td{padding:10px 12px;border-bottom:1px solid rgba(255,193,7,.06);vertical-align:middle}
+.tbl tr:hover td{background:rgba(255,193,7,.04)}
+.tbl tr.cut td{background:rgba(255,23,68,.05)}.tbl tr.win td{background:rgba(0,230,118,.04)}
+.sym{color:var(--gold);font-weight:700;font-family:'Share Tech Mono',monospace;font-size:15px;cursor:pointer;text-decoration:underline;text-underline-offset:4px}
+.pg{color:var(--green);font-weight:bold}.pr{color:var(--red);font-weight:bold}
+.tag{font-family:'Share Tech Mono',monospace;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:bold}
+.tc{background:rgba(255,23,68,.18);color:var(--red);border:1px solid rgba(255,23,68,.3)}
+.th{background:rgba(255,234,0,.08);color:var(--yellow);border:1px solid rgba(255,234,0,.2)}
+.td2{background:rgba(0,230,118,.08);color:var(--green);border:1px solid rgba(0,230,118,.2)}
+.btn-s{background:rgba(255,23,68,.1);border:1px solid rgba(255,23,68,.3);color:var(--red);
+  font-family:'Share Tech Mono',monospace;font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer;font-weight:bold}
+.btn-b{background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.3);color:var(--green);
+  font-family:'Share Tech Mono',monospace;font-size:11px;padding:4px 10px;border-radius:4px;cursor:pointer;font-weight:bold}
+.pnl-bar{height:4px;border-radius:2px;margin-top:4px}
+.btn-sparkle{cursor:pointer; font-size:16px; margin-left:6px; filter:grayscale(0.3); transition:all 0.2s;}
+.btn-sparkle:hover{filter:grayscale(0); transform:scale(1.2);}
+
+/* ── RIGHT PANELS ── */
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px}
+.card{background:rgba(255,193,7,.03);border:1px solid var(--border);border-radius:10px;padding:14px}
+.clbl{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--dim);margin-bottom:6px}
+.cval{font-size:22px;font-weight:700;font-family:'Share Tech Mono',monospace}.csub{font-size:13px;color:var(--dim);margin-top:4px}
+
+/* ── TRANSACTION LOG & OTHERS ── */
+.tx-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(255,193,7,.06);font-size:14px}
+.tx-item:last-child{border-bottom:none}
+.tx-time{color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:12px;white-space:nowrap}
+.tx-side-b{color:var(--green);font-family:'Share Tech Mono',monospace;font-size:11px;padding:2px 8px;background:rgba(0,230,118,.1);border-radius:4px;font-weight:bold}
+.tx-side-s{color:var(--red);font-family:'Share Tech Mono',monospace;font-size:11px;padding:2px 8px;background:rgba(255,23,68,.1);border-radius:4px;font-weight:bold}
+.tx-sym{color:var(--gold);font-weight:bold;font-family:'Share Tech Mono',monospace;font-size:15px}
+.tx-empty{text-align:center;padding:24px;color:var(--dim);font-size:14px}
+
+.pick-item{padding:12px 0;border-bottom:1px solid rgba(255,193,7,.08);font-size:15px;line-height:1.7}
+.pick-sym{color:var(--gold);font-weight:bold;font-family:'Share Tech Mono',monospace;font-size:16px}
+
+.al-scroll{max-height:180px;overflow-y:auto;padding:8px 16px}
+.al-scroll::-webkit-scrollbar{width:4px}.al-scroll::-webkit-scrollbar-thumb{background:rgba(255,193,7,.25)}
+.al-row{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,193,7,.06);font-size:14px;line-height:1.5}
+.al-t{color:var(--dim);white-space:nowrap;font-family:'Share Tech Mono',monospace;font-size:12px}
+.al-ok{color:var(--green)}.al-warn{color:var(--yellow)}.al-info{color:var(--accent)}.al-err{color:var(--red)}
+
+/* ── MODAL ── */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:500;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .3s}
+.modal-bg.open{opacity:1;pointer-events:all}
+.modal{background:var(--panel);border:2px solid var(--gold);border-radius:14px;width:min(480px,92vw);padding:26px}
+.modal-t{font-family:'Cinzel',serif;font-size:20px;color:var(--gold);margin-bottom:16px;font-weight:bold}
+.od{background:var(--dark);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;font-size:16px;line-height:2.1}
+.mw{font-size:14px;color:var(--yellow);margin-bottom:18px;line-height:1.6}
+.mb2{display:flex;gap:12px}
+.btn-confirm{flex:1;background:rgba(255,23,68,.14);border:2px solid var(--red);color:var(--red);font-family:'Share Tech Mono',monospace;font-size:14px;padding:12px;border-radius:8px;cursor:pointer;font-weight:bold}
+.btn-confirm:hover{background:rgba(255,23,68,.28)}.btn-cancel-m{flex:1;background:rgba(255,193,7,.07);border:1px solid var(--gold);color:var(--gold);font-family:'Share Tech Mono',monospace;font-size:14px;padding:12px;border-radius:8px;cursor:pointer;font-weight:bold}
+
+.toast{position:fixed;bottom:24px;right:24px;z-index:9000;background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 20px;font-size:16px;transform:translateY(80px);opacity:0;transition:all .3s;font-weight:bold}
+.toast.on{transform:translateY(0);opacity:1}.toast.ok{border-color:var(--green);color:var(--green)}.toast.err{border-color:var(--red);color:var(--red)}.toast.warn{border-color:var(--yellow);color:var(--yellow)}
+.explain{font-size:14px;color:var(--dim);padding:10px 18px;border-top:1px solid var(--border);line-height:1.7}
+.explain strong{color:#d0daf0}
+@media(max-width:1000px){.wrap{grid-template-columns:1fr}}
+
+/* ── GAME BAR ── */
+.game-bar{background:linear-gradient(90deg,rgba(3,5,8,.98),rgba(10,15,30,.98));border-bottom:1px solid rgba(255,193,7,.25);padding:8px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.xp-wrap{display:flex;align-items:center;gap:10px;flex:1;min-width:200px}
+.xp-label{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);white-space:nowrap}
+.xp-bar-outer{flex:1;height:10px;background:rgba(255,193,7,.1);border-radius:5px;border:1px solid rgba(255,193,7,.2);overflow:hidden;position:relative}
+.xp-bar-inner{height:100%;border-radius:5px;background:linear-gradient(90deg,#ffc107,#ff9100);transition:width 1.2s ease;position:relative}
+.xp-bar-inner::after{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.3) 50%,transparent 100%);animation:shimmer 2s infinite}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+.level-badge{background:linear-gradient(135deg,#ffc107,#ff9100);color:#030508;font-family:'Cinzel',serif;font-size:11px;font-weight:bold;padding:4px 10px;border-radius:6px;white-space:nowrap;box-shadow:0 0 12px rgba(255,193,7,.4)}
+.game-stat{display:flex;flex-direction:column;align-items:center;gap:2px}
+.game-stat-val{font-family:'Share Tech Mono',monospace;font-size:15px;font-weight:bold;color:var(--gold)}
+.game-stat-lbl{font-family:'Share Tech Mono',monospace;font-size:9px;color:var(--dim)}
+.quest-pill{background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.25);border-radius:8px;padding:5px 12px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--accent);cursor:pointer;transition:all .2s;white-space:nowrap}
+.quest-pill:hover{background:rgba(0,229,255,.15);border-color:var(--accent)}
+.quest-pill.done{background:rgba(0,230,118,.08);border-color:rgba(0,230,118,.3);color:var(--green)}
+.streak-fire{font-size:18px;animation:flicker 1.5s ease-in-out infinite alternate}
+@keyframes flicker{0%{filter:brightness(1)}100%{filter:brightness(1.4) drop-shadow(0 0 4px #ff9100)}}
+
+/* ── ACHIEVEMENT POPUP ── */
+.ach-popup{position:fixed;top:80px;right:24px;z-index:8000;background:linear-gradient(135deg,rgba(10,14,25,.98),rgba(20,25,45,.98));border:2px solid var(--gold);border-radius:14px;padding:16px 20px;min-width:260px;box-shadow:0 8px 40px rgba(255,193,7,.25);transform:translateX(320px);opacity:0;transition:all .5s cubic-bezier(.34,1.56,.64,1);pointer-events:none}
+.ach-popup.show{transform:translateX(0);opacity:1}
+.ach-icon{font-size:32px;margin-bottom:6px;display:block;text-align:center}
+.ach-title{font-family:'Cinzel',serif;color:var(--gold);font-size:14px;font-weight:bold;text-align:center;margin-bottom:4px}
+.ach-desc{font-size:13px;color:var(--dim);text-align:center}
+.ach-shine{position:absolute;inset:0;border-radius:14px;background:linear-gradient(135deg,transparent 40%,rgba(255,193,7,.08) 50%,transparent 60%);animation:ach-sweep 2s ease forwards}
+@keyframes ach-sweep{0%{opacity:0;transform:scale(.8)}30%{opacity:1;transform:scale(1)}100%{opacity:0}}
+
+/* ── AI COUNCIL CHAMBER ── */
+.council-wrap{padding:16px}
+.council-controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.council-btn{background:rgba(0,229,255,.07);border:1px solid rgba(0,229,255,.25);color:var(--accent);font-family:'Share Tech Mono',monospace;font-size:12px;padding:7px 14px;border-radius:8px;cursor:pointer;font-weight:bold;transition:all .2s}
+.council-btn:hover{background:rgba(0,229,255,.18);border-color:var(--accent);box-shadow:0 0 12px rgba(0,229,255,.2)}
+.council-btn.primary{background:linear-gradient(135deg,rgba(255,193,7,.15),rgba(255,145,0,.1));border-color:var(--gold);color:var(--gold)}
+.council-btn.primary:hover{background:rgba(255,193,7,.25);box-shadow:0 0 16px rgba(255,193,7,.3)}
+.council-btn:disabled{opacity:.35;cursor:not-allowed}
+.council-topic-inp{flex:1;min-width:200px;background:rgba(3,5,8,.9);border:1px solid rgba(0,229,255,.2);border-radius:8px;padding:8px 14px;color:#d0daf0;font-family:'Sarabun',sans-serif;font-size:14px;outline:none}
+.council-topic-inp:focus{border-color:var(--accent)}
+.chamber{background:rgba(3,5,8,.8);border:1px solid rgba(255,193,7,.1);border-radius:12px;min-height:200px;max-height:480px;overflow-y:auto;padding:16px}
+.chamber::-webkit-scrollbar{width:5px}.chamber::-webkit-scrollbar-thumb{background:rgba(255,193,7,.25);border-radius:3px}
+.chamber-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:180px;gap:12px;color:var(--dim)}
+.chamber-empty-icon{font-size:48px;opacity:.4}
+.agent-msg{display:flex;gap:12px;margin-bottom:20px;animation:fadeSlideIn .5s ease}
+@keyframes fadeSlideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.agent-avatar{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;border:2px solid;box-shadow:0 0 14px rgba(0,0,0,.5)}
+.agent-bubble{flex:1}
+.agent-bubble-hdr{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.agent-name{font-family:'Share Tech Mono',monospace;font-size:12px;font-weight:bold}
+.phase-badge{font-family:'Share Tech Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;background:rgba(255,255,255,.06);color:var(--dim)}
+.phase-badge.debate{background:rgba(255,23,68,.1);color:var(--red)}
+.agent-text{font-size:15px;line-height:1.8;color:#c8d4e8;background:rgba(255,255,255,.03);border-left:3px solid;border-radius:0 8px 8px 0;padding:10px 14px}
+.verdict-box{margin-top:16px;background:linear-gradient(135deg,rgba(255,193,7,.06),rgba(255,145,0,.04));border:1px solid rgba(255,193,7,.3);border-radius:12px;padding:16px;font-size:15px;line-height:1.9}
+.verdict-hdr{font-family:'Cinzel',serif;color:var(--gold);font-size:14px;font-weight:bold;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.thinking-dots{display:flex;gap:5px;padding:8px 0}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--gold);animation:bounce .8s ease infinite}
+.dot:nth-child(2){animation-delay:.15s}.dot:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,100%{transform:translateY(0);opacity:.4}50%{transform:translateY(-8px);opacity:1}}
+.council-status{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--dim);padding:6px 0;min-height:24px;transition:color .3s}
+.council-status.active{color:var(--accent);animation:pulse 1s infinite}
+
+/* ── AUTONOMOUS MODE ── */
+.auto-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(0,230,118,.08);border:1px solid rgba(0,230,118,.3);border-radius:20px;padding:4px 12px;font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--green);cursor:pointer;transition:all .2s}
+.auto-badge.off{background:rgba(84,110,122,.08);border-color:rgba(84,110,122,.3);color:var(--dim)}
+.auto-dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green)}
+.auto-dot.off{background:var(--dim);box-shadow:none}
+
+/* ── SCROLLBAR global ── */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,193,7,.2);border-radius:3px}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="logo">INVESTMENT AVENGERS <span style="font-family:'Share Tech Mono';font-size:11px;color:var(--dim);margin-left:6px">v7.0</span></div>
+  <div class="hdr-r">
+    <span><span class="sd sg"></span>BOT</span>
+    <span><span class="sd sr" id="api-dot"></span>INVX</span>
+    <span><span class="sd sr" id="ai-dot"></span>AI</span>
+    <span id="clk" style="color:var(--accent);font-weight:bold">--:--:--</span>
+  </div>
+</div>
+
+<!-- GAME BAR -->
+<div class="game-bar" id="gameBar">
+  <div class="level-badge" id="levelBadge">⚔ LV.1</div>
+  <div class="xp-wrap">
+    <span class="xp-label">XP</span>
+    <div class="xp-bar-outer"><div class="xp-bar-inner" id="xpBar" style="width:0%"></div></div>
+    <span style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--gold)" id="xpLabel">0/100</span>
+  </div>
+  <div class="game-stat"><div class="game-stat-val" id="statPower">—</div><div class="game-stat-lbl">POWER</div></div>
+  <div class="game-stat"><div class="game-stat-val" id="statWinRate">—</div><div class="game-stat-lbl">WIN RATE</div></div>
+  <div class="game-stat"><div class="game-stat-val" id="statStreak">0 <span class="streak-fire">🔥</span></div><div class="game-stat-lbl">STREAK</div></div>
+  <div class="quest-pill" id="questPill" onclick="showDailyQuest()">⚡ Quest: เชื่อม API</div>
+  <div class="auto-badge off" id="autoBadge" onclick="toggleAutoMode()" title="สลับ Autonomous Mode">
+    <div class="auto-dot off" id="autoDot"></div><span id="autoLabel">AUTO OFF</span>
+  </div>
+</div>
+
+<!-- ACHIEVEMENT POPUP -->
+<div class="ach-popup" id="achPopup">
+  <div class="ach-shine"></div>
+  <span class="ach-icon" id="achIcon">🏆</span>
+  <div class="ach-title" id="achTitle">Achievement Unlocked!</div>
+  <div class="ach-desc" id="achDesc">—</div>
+</div>
+
+<div class="api-bar">
+  <span style="color:var(--yellow);font-family:'Share Tech Mono',monospace;font-size:12px">🔑 Keys อยู่ใน Netlify Server แล้ว</span>
+  <button class="api-btn" onclick="connectAll()" id="connectBtn">⚡ CONNECT</button>
+  <span class="api-st" id="apiSt" style="color:var(--yellow)">● กำลังเชื่อม...</span>
+  <input class="api-inp" id="apiKey" type="hidden" value=""/>
+  <input class="api-inp" id="apiSec" type="hidden" value=""/>
+  <span style="margin-left:12px;padding-left:12px;border-left:1px solid rgba(255,193,7,.3)">
+    <button class="api-btn" style="background:rgba(0,136,204,.15);border-color:#0088cc;color:#0088cc" onclick="setupTelegram()">
+      ✈ Setup Telegram
+    </button>
+    <span id="tgSt" style="font-size:13px;font-family:monospace;margin-left:8px;color:var(--dim)">● ยังไม่เชื่อม</span>
+  </span>
+</div>
+
+<div class="ticker"><div class="ticker-t" id="tkr"></div></div>
+
+<div class="wrap">
+<div class="left">
+
+  <!-- OFFICE -->
+  <div class="panel" style="padding:0">
+    <div class="ph">
+      <span class="ph-t">🏛 INVESTMENT AVENGERS HQ</span>
+      <div style="display:flex;gap:10px;align-items:center">
+        <span class="blv">LIVE</span>
+        <span id="mktPill" class="mkt-pill mkt-c">○ ตลาดปิด</span>
+      </div>
+    </div>
+    <div class="exp-row" id="expRow"></div>
+    <canvas id="officeCanvas"></canvas>
+  </div>
+
+  <!-- DAILY BRIEF -->
+  <div class="panel">
+    <div class="ph">
+      <span class="ph-t">📋 สรุปภาพรวมวันนี้ + แผนการ</span>
+      <button onclick="loadDailyBrief()" style="background:rgba(255,193,7,.1);border:1px solid var(--gold);color:var(--gold);font-family:'Share Tech Mono',monospace;font-size:11px;padding:4px 12px;border-radius:6px;cursor:pointer;font-weight:bold">🔄 อัปเดต</button>
+    </div>
+    <div class="brief-box">
+      <div class="brief-content" id="briefContent">
+        <div class="brief-loading">⏳ กด "อัปเดต" เพื่อให้ AI สรุปสถานการณ์พอร์ตวันนี้...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPERT ANALYSIS TABS -->
+  <div class="panel">
+    <div class="ph"><span class="ph-t">🧠 AI INVESTMENT COUNCIL — วิเคราะห์พอร์ต + แนะนำหุ้น</span></div>
+    <div class="tabs" id="analysisTabs">
+      <button class="tab active" data-tab="chat" onclick="switchTab('chat',this)">💬 ถามได้เลย</button>
+      <button class="tab" data-tab="port" onclick="switchTab('port',this)">📊 วิเคราะห์พอร์ต</button>
+      <button class="tab" data-tab="picks" onclick="switchTab('picks',this)">⭐ หุ้นแนะนำ</button>
+      <button class="tab" data-tab="news" onclick="switchTab('news',this)">📰 ข่าวผลกระทบ</button>
+      <button class="tab" data-tab="council" onclick="switchTab('council',this)">⚔️ AI Council</button>
+    </div>
+
+    <!-- CHAT TAB -->
+    <div class="tab-content active" id="tab-chat">
+      <div class="chat-box" id="chatBox">
+        <div style="color:var(--dim);font-size:15px">
+          👆 เลือก Expert ด้านบน → พิมพ์คำถามได้เลย<br>
+          เช่น "ควรขาย TIPH ไหม?" หรือ "วิเคราะห์ TCAP ให้หน่อย"
+        </div>
+      </div>
+      <div class="chat-wrap" style="padding:0 0 10px 0">
+        <div class="inp-row">
+          <input class="c-inp" id="chatInp" placeholder="พิมพ์คำถาม..." onkeydown="if(event.key==='Enter')sendChat()"/>
+          <button class="send-btn" id="sendBtn" onclick="sendChat()">ส่ง ▶</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PORTFOLIO ANALYSIS TAB -->
+    <div class="tab-content" id="tab-port">
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <button onclick="analyzePortfolio('buffett')" style="background:rgba(255,193,7,.1);border:1px solid rgba(255,193,7,.3);color:var(--gold);font-family:monospace;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer">🟡 Buffett วิเคราะห์</button>
+        <button onclick="analyzePortfolio('minervini')" style="background:rgba(255,23,68,.1);border:1px solid rgba(255,23,68,.3);color:var(--red);font-family:monospace;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer">🔴 Minervini ดู Momentum</button>
+        <button onclick="analyzePortfolio('dalio')" style="background:rgba(224,64,251,.1);border:1px solid rgba(224,64,251,.3);color:#e040fb;font-family:monospace;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer">🟣 Dalio ดู Risk</button>
+        <button onclick="analyzePortfolio('niwes')" style="background:rgba(255,145,0,.1);border:1px solid rgba(255,145,0,.3);color:var(--orange,#ff9100);font-family:monospace;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer">🇹🇭 ดร.นิเวศน์ SET</button>
+        <!-- ✨ GEMINI POWERED FEATURE 1: Portfolio Stress Test ✨ -->
+        <button onclick="runStressTest()" style="background:rgba(0, 229, 255, .1);border:1px solid rgba(0, 229, 255, .3);color:var(--accent);font-family:monospace;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:bold">✨ ทดสอบวิกฤตพอร์ต (Stress Test)</button>
+      </div>
+      <div id="portAnalysisContent" style="font-size:16px;line-height:1.9;color:var(--dim)">
+        กด Expert ด้านบนเพื่อวิเคราะห์พอร์ตจากมุมมองของแต่ละท่าน หรือใช้ AI Stress Test เพื่อดูว่าพอร์ตรับความเสี่ยงไหวแค่ไหน
+      </div>
+    </div>
+
+    <!-- STOCK PICKS TAB -->
+    <div class="tab-content" id="tab-picks">
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <button onclick="loadStockPicks('niwes')" style="background:rgba(255,145,0,.1);border:1px solid rgba(255,145,0,.3);color:#ff9100;font-family:monospace;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer">🇹🇭 ดร.นิเวศน์ — Value SET</button>
+        <button onclick="loadStockPicks('buffett')" style="background:rgba(255,193,7,.1);border:1px solid rgba(255,193,7,.3);color:var(--gold);font-family:monospace;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer">🟡 Buffett — Dividend</button>
+        <button onclick="loadStockPicks('lynch')" style="background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.3);color:var(--green);font-family:monospace;font-size:12px;padding:6px 12px;border-radius:6px;cursor:pointer">🟢 Lynch — Growth</button>
+      </div>
+      <div id="stockPicksContent" style="font-size:16px;line-height:1.9;color:var(--dim)">
+        กด Expert เพื่อดูหุ้น SET ที่แนะนำตามสไตล์การลงทุนของแต่ละท่าน
+      </div>
+    </div>
+
+    <!-- COUNCIL TAB -->
+    <div class="tab-content" id="tab-council">
+      <div class="council-wrap" style="padding:12px 0">
+        <div class="council-controls">
+          <button class="council-btn primary" onclick="runPortfolioCouncil()">🏛 ประชุมวิเคราะห์พอร์ต</button>
+          <button class="council-btn" onclick="runMarketCouncil()">🌍 ภาพรวมตลาด</button>
+          <input class="council-topic-inp" id="councilTopic" placeholder="พิมพ์หัวข้อประชุม เช่น วิเคราะห์ TCAP..." />
+          <button class="council-btn" onclick="runCustomCouncil()">▶ ประชุม</button>
+        </div>
+        <div class="council-status" id="councilStatus">— เลือกหัวข้อประชุมด้านบน หรือกด "ประชุมวิเคราะห์พอร์ต" เพื่อเริ่ม</div>
+        <div class="chamber" id="chamber">
+          <div class="chamber-empty">
+            <span class="chamber-empty-icon">🏛</span>
+            <span style="font-size:14px">ห้องประชุม Investment Avengers Council</span>
+            <span style="font-size:13px">Agents จะถกเถียงและตัดสินใจร่วมกันโดยอัตโนมัติ</span>
+          </div>
+        </div>
+        <div id="councilVerdict"></div>
+      </div>
+    </div>
+
+    <!-- NEWS TAB -->
+    <div class="tab-content" id="tab-news">
+      <button onclick="loadNewsImpact()" style="background:rgba(0,229,255,.08);border:1px solid var(--accent);color:var(--accent);font-family:monospace;font-size:12px;padding:8px 16px;border-radius:6px;cursor:pointer;margin-bottom:14px;font-weight:bold">📰 โหลดข่าวที่กระทบพอร์ต</button>
+      <div id="newsContent" style="font-size:16px;line-height:1.9;color:var(--dim)">
+        กด "โหลดข่าว" เพื่อให้ AI วิเคราะห์ว่าภาวะตลาดส่งผลต่อพอร์ตของเราอย่างไร
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="ph">
+      <span class="ph-t">💼 พอร์ตทั้งหมด</span>
+      <span class="blv">LIVE</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="tbl">
+        <thead><tr>
+          <th>หุ้น</th><th class="r">ถือ</th><th class="r">ต้นทุน/หุ้น</th>
+          <th class="r">ราคาตลาด</th><th class="r">มูลค่า</th>
+          <th class="r">กำไร/ขาดทุน</th><th class="r">%</th>
+          <th>สถานะ AI</th><th>ซื้อ/ขาย</th>
+        </tr></thead>
+        <tbody id="portBody"></tbody>
+      </table>
+    </div>
+    <div class="explain">
+      💡 คลิก <strong>ชื่อหุ้น</strong> เพื่อถาม Expert | 
+      คลิก <strong style="color:var(--accent)">✨</strong> เพื่อให้ AI อธิบายธุรกิจแบบง่ายๆ |
+      <strong style="color:var(--red)">แดง=ควร Cut</strong> | 
+      <strong style="color:var(--yellow)">เหลือง=ถือ</strong> | 
+      <strong style="color:var(--green)">เขียว=DCA/Hold</strong>
+    </div>
+  </div>
+
+</div><!-- /left -->
+
+<div class="right">
+
+  <!-- SUMMARY -->
+  <div class="panel">
+    <div class="ph"><span class="ph-t">📊 ภาพรวมพอร์ต</span></div>
+    <div class="cards">
+      <div class="card"><div class="clbl">มูลค่าตลาดรวม</div><div class="cval" style="color:var(--gold)" id="c-mkt">—</div><div class="csub">บาทไทย</div></div>
+      <div class="card"><div class="clbl">ขาดทุนรวม</div><div class="cval pr" id="c-pnl">—</div><div class="csub" id="c-pct">เทียบกับต้นทุน</div></div>
+      <div class="card"><div class="clbl">กำไร (ตัวที่บวก)</div><div class="cval pg" id="c-win">—</div></div>
+      <div class="card"><div class="clbl">ควร Cut ก่อน</div><div id="c-cuts" style="display:flex;flex-direction:column;gap:5px;margin-top:6px"></div></div>
+    </div>
+  </div>
+
+  <!-- TRANSACTION LOG -->
+  <div class="panel">
+    <div class="ph">
+      <span class="ph-t">📝 รายการซื้อขายวันนี้</span>
+      <span class="blv">LIVE</span>
+    </div>
+    <div style="max-height:220px;overflow-y:auto" id="txLog">
+      <div class="tx-empty">ยังไม่มีรายการวันนี้<br><span style="font-size:13px;color:var(--dim)">เมื่อซื้อหรือขาย จะแสดงที่นี่</span></div>
+    </div>
+  </div>
+
+  <!-- EXPERT DUTY BOARD -->
+  <div class="panel">
+    <div class="ph"><span class="ph-t">👔 หน้าที่แต่ละ Expert วันนี้</span></div>
+    <div style="padding:14px 18px" id="dutyBoard"></div>
+  </div>
+
+  <!-- ACTIVITY LOG -->
+  <div class="panel">
+    <div class="ph"><span class="ph-t">🔔 Activity Log</span><span class="blv">LIVE</span></div>
+    <div class="al-scroll" id="alLog"></div>
+  </div>
+
+</div><!-- /right -->
+</div>
+
+<!-- ORDER MODAL -->
+<div class="modal-bg" id="orderModal">
+  <div class="modal">
+    <div class="modal-t" id="modalTitle">ยืนยันคำสั่ง</div>
+    <div class="od" id="orderDetail"></div>
+    <div class="mw" id="modalWarn"></div>
+    <div class="mb2">
+      <button class="btn-confirm" id="confirmBtn" onclick="executeOrder()">✓ ยืนยันส่งคำสั่ง</button>
+      <button class="btn-cancel-m" onclick="closeModal()">✕ ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// 🟢 ระบบแก้ปัญหา HTTP Cache 🟢
+const originalFetch = window.fetch;
+window.fetch = async function(...args) {
+  let [resource, config] = args;
+  if (typeof resource === 'string' && resource.includes('/api/invx')) {
+    const separator = resource.includes('?') ? '&' : '?';
+    resource += separator + 'nocache=' + new Date().getTime(); 
+  }
+  return originalFetch(resource, config);
+};
+
+// ══════════════════════════════════════════════════════════
+//  SPRITE ENGINE (แก้ไขชื่อไฟล์ภาพให้ตรงแล้ว)
+// ══════════════════════════════════════════════════════════
+const spriteImg = new Image();
+spriteImg.src = 'image_4ec13b.png'; 
+
+const EXPERTS = [
+  {id:'buffett',      name:'Buffett',       role:'Value — วิเคราะห์ Moat+ROE+FCF',        color:'#ffc107',
+   sx:10, sy:25, sw:110, sh:170, duty:'ตรวจ Moat ของหุ้นทุกตัวในพอร์ต', deskX:0.12, deskY:0.68, speech:['Moat แข็งไหม?','ROE>15%?','ถือยาว 10 ปี']},
+  {id:'druckenmiller',name:'Druckenmiller',role:'Macro — ติดตาม FED+Dollar+Liquidity', color:'#448aff',
+   sx:145, sy:20, sw:120, sh:170, duty:'ติดตาม Macro ประจำวัน',              deskX:0.24, deskY:0.62, speech:['FED เดิน?','Risk-On!','Dollar แข็ง']},
+  {id:'minervini',    name:'Minervini',     role:'SEPA — จับ Entry+Breakout+Cut Loss',   color:'#ff1744',
+   sx:300, sy:20, sw:120, sh:170, duty:'ดู Momentum + ระบุหุ้นที่ควร Cut', deskX:0.38, deskY:0.68, speech:['Breakout!','Cut loss!','Volume surge!']},
+  {id:'lynch',        name:'Lynch',         role:'GARP — หา Growth Story+PEG',            color:'#00e676',
+   sx:455, sy:20, sw:120, sh:170, duty:'หา Multibagger ใหม่ใน SET',         deskX:0.65, deskY:0.68, speech:['PEG<1?','คนใช้จริง?','Tenbagger!']},
+  {id:'niwes',        name:'Dr.Niwes',      role:'Thai VI — P/E+Dividend+ผู้บริหาร',      color:'#ff9100',
+   sx:610, sy:20, sw:120, sh:170, duty:'วิเคราะห์ SET เชิง Fundamental',    deskX:0.78, deskY:0.63, speech:['P/E SET?','Dividend?','ถือยาว SET']},
+  {id:'dalio',        name:'Dalio',         role:'Risk — บริหาร Portfolio+Hedge',         color:'#e040fb',
+   sx:10, sy:210, sw:120, sh:170, duty:'ตรวจ Concentration Risk พอร์ต',     deskX:0.52, deskY:0.63, speech:['Balance!','Hedge แล้ว?','Diversify!']},
+  {id:'simons',       name:'Simons',        role:'Quant — Pattern+Statistical Edge',      color:'#90a4ae',
+   sx:160, sy:210, sw:120, sh:170, duty:'สแกน Pattern ทุกหุ้นในพอร์ต',     deskX:0.20, deskY:0.85, speech:['Pattern!','Stat signal','Alpha>0']},
+  {id:'cathie',       name:'Cathie Wood',   role:'Innovation — AI+Disruption+Megatrend', color:'#ff6d00',
+   sx:320, sy:210, sw:120, sh:170, duty:'หา Innovation Stock น่าสนใจ',      deskX:0.72, deskY:0.85, speech:['AI Megatrend!','Disrupt!','5yr horizon']}
+];
+
+const DESK = {sx:740, sy:10, sw:330, sh:150};
+const MEETING = {x:0.50, y:0.82};
+const STATE = {IDLE:0, WALK:1, SIT:2};
+
+const chars = EXPERTS.map((e,i)=>({
+  e, i, state: STATE.SIT, 
+  x:e.deskX, y:e.deskY, 
+  pathT:0, fromX:e.deskX, fromY:e.deskY, toX:e.deskX, toY:e.deskY, 
+  desk:{x:e.deskX, y:e.deskY}, 
+  wanderTimer:5+Math.random()*10, speechText:null, speechTimer:0, speechIdx:0, highlight:false
+}));
+
+const canvas = document.getElementById('officeCanvas');
+const ctx = canvas.getContext('2d');
+function resizeCanvas(){const w=canvas.parentElement.clientWidth;canvas.width=w;canvas.height=Math.round(w*0.52);}
+resizeCanvas(); window.addEventListener('resize',resizeCanvas);
+
+function startWalk(ch,tx,ty){
+  ch.fromX=ch.x; ch.fromY=ch.y; ch.toX=tx; ch.toY=ty; ch.pathT=0; ch.state=STATE.WALK;
+}
+
+function updateChar(ch,dt){
+  ch.speechTimer -= dt; if(ch.speechTimer <= 0) ch.speechText = null;
+  
+  if(ch.state === STATE.WALK){
+    const dist = Math.hypot(ch.toX-ch.fromX, ch.toY-ch.fromY);
+    ch.pathT += dt * (80/(canvas.width||900)) / Math.max(dist, 0.001);
+    ch.x = ch.fromX + (ch.toX-ch.fromX) * Math.min(ch.pathT, 1);
+    ch.y = ch.fromY + (ch.toY-ch.fromY) * Math.min(ch.pathT, 1);
+    if(ch.pathT >= 1){
+      ch.x = ch.toX; ch.y = ch.toY; 
+      const atDesk = Math.abs(ch.x-ch.desk.x)<0.02 && Math.abs(ch.y-ch.desk.y)<0.02;
+      ch.state = atDesk ? STATE.SIT : STATE.IDLE;
+    }
+    return;
+  }
+  
+  ch.wanderTimer -= dt;
+  if(ch.wanderTimer <= 0){
+    const targets = [MEETING, EXPERTS[(ch.i+1+Math.floor(Math.random()*3))%EXPERTS.length], {x:0.3+Math.random()*0.4, y:0.75+Math.random()*0.12}];
+    const t = ch.state === STATE.SIT ? targets[Math.floor(Math.random()*targets.length)] : {x:ch.desk.x, y:ch.desk.y};
+    startWalk(ch, t.x, t.y); ch.wanderTimer = 8 + Math.random()*12;
+  }
+}
+
+function drawChar(ch){
+  if(!spriteImg.complete || !spriteImg.naturalWidth) return;
+  const sc = canvas.width / 1350;
+  const px = ch.x * canvas.width, py = ch.y * canvas.height;
+  
+  const dw = ch.e.sw * sc * 0.9;
+  const dh = ch.e.sh * sc * 0.9;
+  
+  const bounce = ch.state === STATE.WALK ? Math.abs(Math.sin(ch.pathT * Math.PI * 8)) * 8 * sc : 0;
+
+  if(ch.highlight){ ctx.save(); ctx.shadowColor=ch.e.color; ctx.shadowBlur=25; }
+  
+  ctx.drawImage(spriteImg, ch.e.sx, ch.e.sy, ch.e.sw, ch.e.sh, px - dw/2, py - dh - bounce, dw, dh);
+  
+  if(ch.highlight) ctx.restore();
+  
+  /* ขยายขนาดฟอนต์บน Canvas ให้ใหญ่และอ่านชัดขึ้น */
+  ctx.save(); ctx.font=Math.round(16*sc)+'px "Share Tech Mono", monospace'; ctx.textAlign='center';
+  const lw=ctx.measureText(ch.e.name.split(' ')[0]).width+20;
+  ctx.fillStyle='rgba(3,5,8,0.85)'; ctx.fillRect(px-lw/2, py+5, lw, 22*sc);
+  ctx.fillStyle=ch.e.color; ctx.fillText(ch.e.name.split(' ')[0], px, py+20*sc);
+  
+  if(ch.speechText){
+    ctx.font=Math.round(16*sc)+'px "Sarabun", sans-serif';
+    const tw=ctx.measureText(ch.speechText).width+24, bw=Math.max(tw,60), bh=30*sc;
+    const bx=px-bw/2, by=py-dh-bh-bounce-8;
+    ctx.fillStyle='rgba(4,6,9,0.96)'; ctx.strokeStyle=ch.e.color; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='rgba(4,6,9,0.96)'; ctx.beginPath(); ctx.moveTo(px-5,by+bh); ctx.lineTo(px+5,by+bh); ctx.lineTo(px,by+bh+10); ctx.fill();
+    ctx.strokeStyle=ch.e.color; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(px-5,by+bh); ctx.lineTo(px,by+bh+10); ctx.lineTo(px+5,by+bh); ctx.stroke();
+    ctx.fillStyle=ch.e.color; ctx.fillText(ch.speechText, px, by+bh*0.7);
+  }
+  ctx.restore();
+}
+
+function renderOffice(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#050810'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  const sc = canvas.width / 1350;
+  
+  if(spriteImg.complete && spriteImg.naturalWidth){
+    EXPERTS.forEach(e => {
+      const dw = DESK.sw * sc * 0.7;
+      const dh = DESK.sh * sc * 0.7;
+      const px = e.deskX * canvas.width;
+      const py = e.deskY * canvas.height;
+      ctx.drawImage(spriteImg, DESK.sx, DESK.sy, DESK.sw, DESK.sh, px - dw/2, py - dh/2, dw, dh);
+    });
+  }
+
+  [...chars].sort((a,b)=>a.y-b.y).forEach(drawChar);
+}
+
+let lastT=performance.now();
+function loop(now){
+  const dt=Math.min((now-lastT)/1000,.05); lastT=now;
+  chars.forEach(ch=>updateChar(ch,dt)); 
+  renderOffice(); 
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+let si=0;
+function autoSpeech(){
+  const ch=chars[si%chars.length];
+  ch.speechText=ch.e.speech[ch.speechIdx%ch.e.speech.length];
+  ch.speechTimer=4; ch.speechIdx++; si++;
+  setTimeout(autoSpeech, 4000+Math.random()*5000);
+}
+setTimeout(autoSpeech,3000);
+
+canvas.addEventListener('click',e=>{
+  const r=canvas.getBoundingClientRect();
+  const mx=(e.clientX-r.left)*(canvas.width/r.width)/canvas.width, my=(e.clientY-r.top)*(canvas.height/r.height)/canvas.height;
+  let best=null,bd=99;chars.forEach(ch=>{const d=Math.hypot(ch.x-mx,ch.y-my);if(d<bd){bd=d;best=ch;}});
+  if(best&&bd<0.08){selectExpert(best.e.id);best.speechText=best.e.speech[best.speechIdx%best.e.speech.length];best.speechTimer=4;best.speechIdx++;}
+});
+
+document.getElementById('expRow').innerHTML = EXPERTS.map(e=>'<div class="exp-btn" id="eb-'+e.id+'" data-id="'+e.id+'" onclick="selectExpert(this.dataset.id)"><canvas width="'+e.sw+'" height="'+e.sh+'" id="p-'+e.id+'" style="height:38px;width:auto;image-rendering:auto"></canvas><span class="exp-btn-name">'+e.name.split(' ')[0]+'</span></div>').join('');
+function drawPortraits(){
+  if(!spriteImg.complete || !spriteImg.naturalWidth) { setTimeout(drawPortraits,400); return; }
+  EXPERTS.forEach(e=>{
+    const c=document.getElementById('p-'+e.id); if(!c)return;
+    const pc=c.getContext('2d');
+    pc.drawImage(spriteImg, e.sx, e.sy, e.sw, e.sh, 0, 0, e.sw, e.sh);
+  });
+}
+setTimeout(drawPortraits,1000);
+
+function buildDutyBoard(){
+  document.getElementById('dutyBoard').innerHTML = EXPERTS.map(e=>'<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,193,7,.07);font-size:14px"><span style="font-size:18px;width:24px;flex-shrink:0">'+({buffett:'📖',druckenmiller:'📡',minervini:'⚡',dalio:'🛡️',lynch:'🔍',niwes:'🇹🇭',simons:'📊',cathie:'🚀'}[e.id]||'•')+'</span><div><div style="font-family:monospace;font-size:12px;color:'+e.color+';margin-bottom:4px;font-weight:bold">'+e.name+'</div><div style="color:var(--dim)">'+e.duty+'</div></div></div>').join('');
+}
+buildDutyBoard();
+
+function switchTab(id,btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-'+id).classList.add('active');
+}
+
+let curExpert = null;
+
+function selectExpert(id){
+  curExpert=EXPERTS.find(e=>e.id===id);
+  chars.forEach(ch=>ch.highlight=ch.e.id===id);
+  document.querySelectorAll('.exp-btn').forEach(b=>b.classList.remove('active'));
+  const btn=document.getElementById('eb-'+id);if(btn)btn.classList.add('active');
+  const box=document.getElementById('chatBox');
+  box.innerHTML='<div style="color:'+curExpert.color+';font-family:monospace;font-size:12px;margin-bottom:8px;font-weight:bold">'+curExpert.name+' — '+curExpert.role+'</div><div style="color:var(--dim);font-size:14px">พิมพ์คำถามด้านล่าง</div>';
+  switchTab('chat',document.querySelector('[data-tab="chat"]'));
+  addLog('info',curExpert.name+' พร้อมตอบคำถาม');
+}
+
+async function callAI(action, payload){
+  const res = await originalFetch('/api/ai?action='+action,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(payload)
+  });
+  const contentType = res.headers.get("content-type");
+  if (!contentType || !contentType.includes("application/json")) {
+    throw new Error('AI หน่วงชั่วคราว กรุณากดใหม่ครับ');
+  }
+  return res.json();
+}
+
+async function sendChat(){
+  if(!curExpert){showToast('เลือก Expert ก่อน','warn');return;}
+  const inp=document.getElementById('chatInp');
+  const msg=inp.value.trim();if(!msg)return;
+  inp.value='';
+  const box=document.getElementById('chatBox');
+  box.innerHTML+='<div style="color:var(--accent);margin-top:10px;font-size:16px;font-weight:bold">🙋 '+msg+'</div>';
+  const tid='t'+Date.now();
+  box.innerHTML+='<div id="'+tid+'" style="color:var(--dim);font-style:italic;font-size:14px;animation:pulse 1s infinite">'+curExpert.name+' กำลังคิด...</div>';
+  box.scrollTop=box.scrollHeight;
+  document.getElementById('sendBtn').disabled=true;
+  try{
+    const data = await callAI('chat',{expertId:curExpert.id,message:msg,portfolio:PORTFOLIO});
+    if(data){
+      let reply=data.reply||'ไม่ได้รับคำตอบ';
+      reply=reply.replace(/ซื้อ/g,'<span style="color:var(--green);font-weight:bold">ซื้อ</span>').replace(/ขาย/g,'<span style="color:var(--red);font-weight:bold">ขาย</span>').replace(/ถือ/g,'<span style="color:var(--yellow);font-weight:bold">ถือ</span>');
+      const el=document.getElementById(tid);
+      if(el)el.outerHTML='<div style="color:#d0daf0;font-size:16px;line-height:1.9;margin-top:10px;padding-left:14px;border-left:3px solid '+curExpert.color+'">'+reply+'</div>';
+      addLog('info',curExpert.name+': '+msg.slice(0,30));
+      const ch=chars.find(c=>c.e.id===curExpert.id);if(ch){ch.speechText=msg.slice(0,20)+'...';ch.speechTimer=4;}
+      document.getElementById('ai-dot').style.background='var(--green)';document.getElementById('ai-dot').style.boxShadow='0 0 6px var(--green)';
+    }
+  }catch(err){
+    const el=document.getElementById(tid);
+    if(el)el.outerHTML='<div style="color:var(--red);font-size:14px">❌ '+err.message+'</div>';
+    addLog('err','AI error: '+err.message);
+  }
+  document.getElementById('sendBtn').disabled=false;
+  box.scrollTop=box.scrollHeight;
+}
+
+// ✨ GEMINI POWERED FEATURE 1: Portfolio Stress Test ✨
+async function runStressTest() {
+  const el = document.getElementById('portAnalysisContent');
+  el.innerHTML = '<div style="color:var(--accent);font-size:15px;animation:pulse 1s infinite">✨ AI กำลังจำลองสถานการณ์ตลาดพังทลาย (Crash Simulation)...</div>';
+  try {
+    const portStr = PORTFOLIO.map(p=>`${p.sym} (${p.qty} หุ้น)`).join(', ');
+    const prompt = `พอร์ตของฉันมีหุ้นดังนี้: ${portStr}\nจงทำ Stress Test สมมติว่าเกิดวิกฤตเศรษฐกิจโลก (เช่น ดอกเบี้ยพุ่ง, สงคราม, หรือโรคระบาด) หุ้นตัวไหนจะร่วงหนักสุด ตัวไหนจะรอด และฉันควรป้องกันความเสี่ยงอย่างไร? ขอคำแนะนำสั้นๆ 3-4 ประโยค ที่เฉียบขาดและเข้าใจง่าย`;
+    const data = await callAI('chat', {expertId: 'dalio', message: prompt, portfolio: PORTFOLIO});
+    
+    if(data) {
+      let txt = (data.reply || 'ไม่สามารถทดสอบได้').replace(/\n/g, '<br>');
+      el.innerHTML = '<div style="color:var(--accent);font-family:monospace;font-size:14px;margin-bottom:10px;font-weight:bold">✨ <b>ผลจำลองวิกฤต Portfolio Stress Test (โดย Ray Dalio)</b></div><div style="line-height:1.9">' + txt + '</div>';
+      addLog('info', '✨ ทำการทดสอบ Stress Test พอร์ตเรียบร้อย');
+    }
+  } catch(err) {
+    el.innerHTML = '<div style="color:var(--red);font-size:14px">❌ ' + err.message + '</div>';
+  }
+}
+
+// ✨ GEMINI POWERED FEATURE 2: Explain Like I'm 5 (อธิบายหุ้นแบบง่ายๆ) ✨
+function explainStockELI5(sym) {
+  switchTab('chat', document.querySelector('[data-tab="chat"]'));
+  selectExpert('buffett');
+  const inp = document.getElementById('chatInp');
+  inp.value = `✨ ช่วยอธิบายธุรกิจของหุ้น ${sym} ให้เด็ก 5 ขวบฟังหน่อยว่าเขาทำมาหากินยังไง และความเสี่ยงคืออะไร?`;
+  sendChat();
+  addLog('info', `✨ ร้องขอ AI ให้อธิบายหุ้น ${sym} แบบง่ายๆ`);
+}
+
+async function analyzePortfolio(expertId){
+  const el=document.getElementById('portAnalysisContent');
+  el.innerHTML='<div style="color:var(--dim);font-size:15px;animation:pulse 1s infinite">'+EXPERTS.find(e=>e.id===expertId)?.name+' กำลังวิเคราะห์พอร์ตทั้งหมด...</div>';
+  try{
+    const data=await callAI('analyzePortfolio',{expertId,portfolio:PORTFOLIO});
+    if(data){
+      const e=EXPERTS.find(x=>x.id===expertId);
+      let txt=data.analysis||'';
+      txt=txt.replace(/ซื้อ/g,'<span style="color:var(--green);font-weight:bold">ซื้อ</span>').replace(/ขาย/g,'<span style="color:var(--red);font-weight:bold">ขาย</span>').replace(/ถือ/g,'<span style="color:var(--yellow);font-weight:bold">ถือ</span>');
+      el.innerHTML='<div style="color:'+(e?.color||'#ffc107')+';font-family:monospace;font-size:14px;margin-bottom:10px;font-weight:bold">'+(data.expert || e.name)+'</div><div style="line-height:1.9">'+txt+'</div>';
+      addLog('ok',(data.expert || e.name)+' วิเคราะห์พอร์ตเสร็จแล้ว');
+    }
+  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+err.message+'</div>';}
+}
+
+async function loadStockPicks(expertId){
+  const el=document.getElementById('stockPicksContent');
+  el.innerHTML='<div style="color:var(--dim);font-size:15px;animation:pulse 1s infinite">'+EXPERTS.find(e=>e.id===expertId)?.name+' กำลังหาหุ้นที่น่าสนใจ...</div>';
+  try{
+    const data=await callAI('stockPicks',{expertId});
+    if(data){
+      const e=EXPERTS.find(x=>x.id===expertId);
+      let txt=data.picks||'';
+      txt=txt.split('\n').join('<br>');
+      el.innerHTML='<div style="color:'+(e?.color||'#ffc107')+';font-family:monospace;font-size:14px;margin-bottom:10px;font-weight:bold">'+(data.expert || e.name)+' แนะนำ:</div><div style="line-height:1.9">'+txt+'</div>';
+      addLog('ok',(data.expert || e.name)+' แนะนำหุ้นน่าสนใจแล้ว');
+    }
+  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+err.message+'</div>';}
+}
+
+async function loadNewsImpact(){
+  const el=document.getElementById('newsContent');
+  el.innerHTML='<div style="color:var(--dim);font-size:15px;animation:pulse 1s infinite">กำลังวิเคราะห์ข่าวที่ส่งผลต่อพอร์ต...</div>';
+  try{
+    const data=await callAI('newsImpact',{portfolio:PORTFOLIO});
+    if(data){
+      let txt=(data.news||'').split('\n').join('<br>');
+      el.innerHTML='<div style="line-height:1.9">'+txt+'</div>';
+      addLog('info','วิเคราะห์ข่าวผลกระทบพอร์ตเสร็จแล้ว');
+    }
+  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+err.message+'</div>';}
+}
+
+async function loadDailyBrief(){
+  const el=document.getElementById('briefContent');
+  el.innerHTML='<div class="brief-loading">⏳ AI กำลังสรุปสถานการณ์และวางแผนวันนี้...</div>';
+  try{
+    const data=await callAI('dailyBrief',{portfolio:PORTFOLIO});
+    if(data){
+      let txt=(data.brief||'').replace(/\n/g,'<br>');
+      el.innerHTML='<div style="line-height:1.9">'+txt+'</div>';
+      addLog('ok','Daily Brief อัปเดตแล้ว ✓');
+    }
+  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+err.message+'</div>';}
+}
+
+let PORTFOLIO = [{"sym": "PM", "qty": 800, "avg": 9.73, "mkt": 10.8, "pnl_pct": 11.01}, {"sym": "TIPH", "qty": 300, "avg": 33.56, "mkt": 21.4, "pnl_pct": -36.23}, {"sym": "TCAP", "qty": 100, "avg": 34.06, "mkt": 61.25, "pnl_pct": 79.85}, {"sym": "TACC", "qty": 1000, "avg": 5.38, "mkt": 5.8, "pnl_pct": 7.73}, {"sym": "TKS", "qty": 720, "avg": 9.39, "mkt": 7.3, "pnl_pct": -22.26}, {"sym": "KGI", "qty": 900, "avg": 6.19, "mkt": 4.32, "pnl_pct": -30.19}, {"sym": "ARROW", "qty": 700, "avg": 8.11, "mkt": 5.3, "pnl_pct": -34.68}, {"sym": "ASEFA", "qty": 600, "avg": 4.03, "mkt": 5.5, "pnl_pct": 36.59}, {"sym": "ICN", "qty": 1500, "avg": 4.67, "mkt": 2.12, "pnl_pct": -54.62}, {"sym": "RATCH", "qty": 100, "avg": 31.55, "mkt": 30.75, "pnl_pct": -2.54}, {"sym": "PTL", "qty": 300, "avg": 15.51, "mkt": 10.2, "pnl_pct": -34.23}, {"sym": "SMPC", "qty": 300, "avg": 11.52, "mkt": 9.1, "pnl_pct": -21.0}, {"sym": "MBAX", "qty": 1400, "avg": 3.59, "mkt": 1.87, "pnl_pct": -47.85}, {"sym": "SNC", "qty": 300, "avg": 8.71, "mkt": 6.85, "pnl_pct": -21.4}, {"sym": "MFC", "qty": 100, "avg": 22.74, "mkt": 19.0, "pnl_pct": -16.44}, {"sym": "AIT", "qty": 400, "avg": 6.03, "mkt": 4.72, "pnl_pct": -21.69}, {"sym": "WINNER", "qty": 900, "avg": 2.18, "mkt": 2.08, "pnl_pct": -4.65}, {"sym": "ASK", "qty": 200, "avg": 34.68, "mkt": 9.2, "pnl_pct": -73.47}, {"sym": "LH", "qty": 500, "avg": 7.74, "mkt": 3.64, "pnl_pct": -52.99}, {"sym": "LALIN", "qty": 400, "avg": 8.97, "mkt": 4.36, "pnl_pct": -51.37}, {"sym": "GC", "qty": 380, "avg": 4.93, "mkt": 4.5, "pnl_pct": -8.71}, {"sym": "SAT", "qty": 100, "avg": 14.12, "mkt": 15.5, "pnl_pct": 9.75}, {"sym": "TSC", "qty": 100, "avg": 13.92, "mkt": 14.8, "pnl_pct": 6.3}, {"sym": "TMILL", "qty": 600, "avg": 3.81, "mkt": 2.3, "pnl_pct": -39.58}, {"sym": "RJH", "qty": 100, "avg": 32.81, "mkt": 12.9, "pnl_pct": -60.68}, {"sym": "BIS", "qty": 500, "avg": 12.3, "mkt": 2.06, "pnl_pct": -83.25}, {"sym": "DRT", "qty": 200, "avg": 7.61, "mkt": 5.0, "pnl_pct": -34.32}, {"sym": "PDG", "qty": 300, "avg": 3.63, "mkt": 3.12, "pnl_pct": -13.96}, {"sym": "FVC", "qty": 3000, "avg": 1.62, "mkt": 0.31, "pnl_pct": -80.9}, {"sym": "IFS", "qty": 500, "avg": 2.42, "mkt": 1.84, "pnl_pct": -24.09}, {"sym": "TPIPP", "qty": 500, "avg": 4.39, "mkt": 1.78, "pnl_pct": -59.43}, {"sym": "CAZ", "qty": 500, "avg": 5.06, "mkt": 1.55, "pnl_pct": -69.36}, {"sym": "AS", "qty": 300, "avg": 18.6, "mkt": 2.4, "pnl_pct": -87.1}, {"sym": "CAZ_R", "qty": 300, "avg": 3.99, "mkt": 1.55, "pnl_pct": -61.12}, {"sym": "CWT_R", "qty": 300, "avg": 2.86, "mkt": 0.76, "pnl_pct": -73.47}];
+let TRANSACTIONS = [];
+
+const AI_TAGS={PM:'DCA',TIPH:'Cut?',TCAP:'Hold',TACC:'Hold',TKS:'Cut?',KGI:'DCA',ARROW:'Cut?',ASEFA:'Hold',ICN:'Cut',RATCH:'Hold',PTL:'Cut?',SMPC:'Cut?',MBAX:'Cut',SNC:'Cut?',MFC:'Hold',AIT:'Cut?',WINNER:'Hold',ASK:'Cut',LH:'Cut',LALIN:'Cut',GC:'Hold',SAT:'Hold',TSC:'Hold',TMILL:'Cut?',RJH:'Cut',BIS:'Cut!',DRT:'Cut?',PDG:'Hold?',FVC:'Cut!',IFS:'Cut?',TPIPP:'Cut?',CAZ:'Cut!',AS:'Cut!',CAZ_R:'Cut!',CWT_R:'Cut!'};
+
+function fmt(n){return n.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmtB(n){return '฿'+Math.abs(n).toLocaleString('th-TH',{maximumFractionDigits:0});}
+function sgn(n){return n>=0?'+':'';}
+
+function renderPort(){
+  let tc=0,tm=0,wPnl=0,lPnl=0;
+  document.getElementById('portBody').innerHTML=PORTFOLIO.map(p=>{
+    const mv=p.mkt*p.qty,cv=p.avg*p.qty,pnl=mv-cv,pct=pnl/cv*100;
+    tc+=cv;tm+=mv;if(pnl>=0)wPnl+=pnl;else lPnl+=pnl;
+    const cls=pnl>=0?'pg':'pr',bc=pnl>=0?'#00e676':'#ff1744',bw=Math.min(100,Math.abs(pct)*1.2);
+    const tag=pct<=-70?{c:'tc',t:'Cut!'}:pct<=-30?{c:'tc',t:'Cut?'}:pct>=10?{c:'td2',t:'Hold'}:{c:'th',t:'Hold'};
+    const rowCls=pct<=-70?'cut':pct>=10?'win':'';
+    return '<tr class="'+rowCls+'">'
+      +'<td><span class="sym" data-sym="'+p.sym+'" onclick="askAboutStock(this.dataset.sym)">'+p.sym+'</span> <span class="btn-sparkle" title="✨ ให้ AI อธิบายธุรกิจนี้ง่ายๆ" onclick="explainStockELI5(\''+p.sym+'\')">✨</span><span class="tag '+tag.c+'">'+tag.t+'</span></td>'
+      +'<td class="r">'+p.qty.toLocaleString()+'</td>'
+      +'<td class="r">'+fmt(p.avg)+'</td>'
+      +'<td class="r" style="color:'+bc+';font-weight:bold">'+fmt(p.mkt)+'</td>'
+      +'<td class="r">'+fmtB(mv)+'</td>'
+      +'<td class="r '+cls+'">'+sgn(pnl)+fmtB(pnl)+'<div class="pnl-bar" style="background:'+bc+';width:'+bw+'%"></div></td>'
+      +'<td class="r '+cls+'">'+sgn(pct)+pct.toFixed(1)+'%</td>'
+      +'<td style="font-size:12px;color:var(--dim)">'+(AI_TAGS[p.sym]||'')+'</td>'
+      +'<td style="white-space:nowrap"><button class="btn-s" data-sym="'+p.sym+'" data-qty="'+p.qty+'" data-mkt="'+p.mkt.toFixed(2)+'" data-side="SELL" onclick="prepOrderBtn(this)">ขาย</button> <button class="btn-b" data-sym="'+p.sym+'" data-mkt="'+p.mkt.toFixed(2)+'" data-side="BUY" onclick="prepOrderBtn(this)">ซื้อ</button></td>'
+      +'</tr>';
+  }).join('');
+  window._tt={tc,tm,wPnl,lPnl};renderSummary();buildTicker();
+}
+
+function renderSummary(){
+  const{tc,tm,wPnl,lPnl}=window._tt||{tc:131450,tm:86225,wPnl:0,lPnl:0};
+  const pnl=tm-tc;
+  document.getElementById('c-mkt').textContent='฿'+tm.toLocaleString('th-TH',{maximumFractionDigits:0});
+  document.getElementById('c-pnl').textContent=(pnl>=0?'+':'')+fmtB(pnl);
+  document.getElementById('c-pnl').style.color=pnl>=0?'var(--green)':'var(--red)';
+  document.getElementById('c-pct').textContent=(pnl>=0?'+':'')+(pnl/tc*100).toFixed(1)+'% จากต้นทุน';
+  document.getElementById('c-win').textContent='+'+fmtB(wPnl);
+  setTimeout(buildCutsWithTG, 50);
+}
+
+function buildCutsWithTG() {
+  const cuts = PORTFOLIO.filter(p => (p.mkt - p.avg) / p.avg * 100 <= -70);
+  document.getElementById('c-cuts').innerHTML = cuts.map(p => {
+    const pnl = ((p.mkt - p.avg) / p.avg * 100).toFixed(1);
+    return '<div style="display:flex;gap:6px;margin-bottom:6px;align-items:center">'
+      + '<span style="background:rgba(255,23,68,.15);border:1px solid rgba(255,23,68,.3);color:var(--red);font-family:monospace;font-size:11px;padding:4px 8px;border-radius:4px;cursor:pointer;font-weight:bold" data-sym="' + p.sym + '" data-qty="' + p.qty + '" data-mkt="' + p.mkt.toFixed(2) + '" data-side="SELL" onclick="prepOrderBtn(this)">' + p.sym + '</span>'
+      + '<span title="ส่งแจ้งเตือน Telegram" style="background:rgba(0,136,204,.15);border:1px solid #0088cc55;color:#0088cc;font-size:12px;padding:3px 8px;border-radius:4px;cursor:pointer" data-sym="'+p.sym+'" data-qty="'+p.qty+'" data-mkt="'+p.mkt.toFixed(2)+'" data-pnl="'+pnl+'" onclick="tgAlertBtn(this)">📱</span>'
+      + '</div>';
+  }).join('');
+}
+
+function askAboutStock(sym){
+  if(!curExpert)selectExpert('buffett');
+  document.getElementById('chatInp').value='วิเคราะห์ '+sym+' ควรถือ/ขาย/DCA? และบอก Valuation ปัจจุบัน';
+  switchTab('chat',document.querySelector('[data-tab="chat"]'));
+  sendChat();
+}
+
+function prepOrderBtn(el){prepOrder(el.dataset.sym,el.dataset.side,parseInt(el.dataset.qty)||100,parseFloat(el.dataset.mkt));}
+
+function addTransaction(sym,side,qty,price){
+  const n=new Date();
+  const t=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')+':'+String(n.getSeconds()).padStart(2,'0');
+  TRANSACTIONS.unshift({time:t,sym,side,qty,price,value:qty*price});
+  renderTxLog();
+}
+
+function renderTxLog(){
+  const el=document.getElementById('txLog');
+  if(!TRANSACTIONS.length){el.innerHTML='<div class="tx-empty">ยังไม่มีรายการวันนี้<br><span style="font-size:12px;color:var(--dim)">เมื่อซื้อหรือขาย จะแสดงที่นี่</span></div>';return;}
+  el.innerHTML=TRANSACTIONS.map(tx=>'<div class="tx-item"><span class="tx-time">'+tx.time+'</span><span class="tx-side-'+(tx.side==='BUY'?'b':'s')+'">'+(tx.side==='BUY'?'ซื้อ':'ขาย')+'</span><span class="tx-sym">'+tx.sym+'</span><span style="color:var(--dim);font-size:13px">'+tx.qty.toLocaleString()+' หุ้น @ '+fmt(tx.price)+'</span><span style="color:'+(tx.side==='BUY'?'var(--red)':'var(--green)')+';font-family:monospace;font-size:13px;margin-left:auto;font-weight:bold">'+fmtB(tx.value)+'</span></div>').join('');
+}
+
+let pendingOrder=null;
+window._apiKey=''; window._apiSecret=''; window._apiConnected=false;
+
+function prepOrder(sym,side,qty,price){
+  const p=PORTFOLIO.find(x=>x.sym===sym);
+  const pnlPct=p?((p.mkt-p.avg)/p.avg*100).toFixed(1):'0';
+  pendingOrder={sym,side,qty,price:price.toFixed(2)};
+  const st=side==='SELL'?'ขาย':'ซื้อ',sc=side==='SELL'?'var(--red)':'var(--green)';
+  document.getElementById('modalTitle').textContent=st+' '+sym;
+  document.getElementById('orderDetail').innerHTML=
+    '<div>หุ้น: <strong style="color:var(--gold);font-size:18px">'+sym+'</strong></div>'
+    +'<div>ทิศทาง: <strong style="color:'+sc+'">'+st+'</strong></div>'
+    +'<div>จำนวน: '+qty.toLocaleString()+' หุ้น</div>'
+    +'<div>ราคา: ฿'+price.toFixed(2)+' / หุ้น</div>'
+    +'<div>มูลค่ารวม: <strong>'+fmtB(qty*price)+'</strong></div>'
+    +(p&&side==='SELL'?'<div style="margin-top:10px">P&L ปัจจุบัน: <span style="font-weight:bold;color:'+(parseFloat(pnlPct)>=0?'var(--green)':'var(--red)')+'">'+pnlPct+'%</span></div>':'');
+  document.getElementById('modalWarn').textContent=side==='SELL'&&p&&p.mkt<p.avg?'⚠ ราคาต่ำกว่าต้นทุน ขาดทุน '+pnlPct+'% — ยืนยันจะ Lock ขาดทุนจริง':'ตรวจสอบก่อนยืนยัน — คำสั่งนี้จะส่งไป InnovestX จริง';
+  document.getElementById('orderModal').classList.add('open');
+}
+
+async function executeOrder(){
+  if(!pendingOrder)return;
+  const o=pendingOrder;
+  document.getElementById('confirmBtn').disabled=true;
+  document.getElementById('confirmBtn').textContent='กำลังส่ง...';
+  if(!window._apiConnected){showToast('ใส่ InnovestX Key ก่อน','warn');closeModal();return;}
+  try{
+    const body={ticker:o.sym,side:o.side,quantity:o.qty,order_type:'MP-MTL',
+      comment:'EarthhEvans '+o.side+' '+o.sym+' '+o.qty+'@'+o.price,api_secret:window._apiSecret};
+    const res=await originalFetch('/api/invx?action=order',{method:'POST',headers:{'Content-Type':'application/json','api-key':window._apiKey,'api-secret':window._apiSecret},body:JSON.stringify(body)});
+    const data=await res.json();
+    if(res.ok){
+      addLog('ok','✅ Order: '+o.side+' '+o.sym+' '+o.qty+'หุ้น @'+o.price);
+      addTransaction(o.sym,o.side,o.qty,parseFloat(o.price));
+      showToast(o.side==='SELL'?'ขาย '+o.sym+' สำเร็จ':'ซื้อ '+o.sym+' สำเร็จ','ok');
+      if(o.side==='SELL'){const idx=PORTFOLIO.findIndex(p=>p.sym===o.sym);if(idx>=0){PORTFOLIO[idx].qty-=o.qty;if(PORTFOLIO[idx].qty<=0)PORTFOLIO.splice(idx,1);}}
+      renderPort();
+    }else{addLog('err','Order failed: '+(data.message||res.status));showToast('Order ไม่สำเร็จ: '+(data.message||'error'),'err');}
+  }catch(err){addLog('err','Error: '+err.message);showToast(err.message,'err');}
+  document.getElementById('confirmBtn').disabled=false;
+  document.getElementById('confirmBtn').textContent='✓ ยืนยันส่งคำสั่ง';
+  closeModal();
+}
+function closeModal(){document.getElementById('orderModal').classList.remove('open');pendingOrder=null;}
+
+async function autoInit() {
+  try {
+    const r = await originalFetch('/api/config');
+    const cfg = await r.json();
+    const st = document.getElementById('apiSt');
+    if (cfg.invxReady && cfg.geminiReady) {
+      window._useServerKeys = true;
+      addLog('ok', '✅ พบ Keys ใน Server — กำลังเชื่อม...');
+      await connectAll();
+    } else {
+      st.textContent = '⚠ Key ยังไม่ครบใน Netlify';
+      st.style.color = 'var(--yellow)';
+      addLog('warn', 'Keys ใน Netlify: INVX='+(cfg.invxReady?'✅':'❌')+' Gemini='+(cfg.geminiReady?'✅':'❌'));
+    }
+  } catch(e) {
+    addLog('warn', 'Config check: '+e.message);
+  }
+}
+
+async function connectAll(){
+  const key=document.getElementById('apiKey').value.trim();
+  const sec=document.getElementById('apiSec').value.trim();
+  const st=document.getElementById('apiSt');
+  st.textContent='กำลังเชื่อม...';st.style.color='var(--yellow)';
+  let invxOk=false,aiOk=false;
+  const useServer = window._useServerKeys || true;
+  if(useServer || (key&&sec)){
+    try{
+      const headers = useServer ? {'Content-Type':'application/json'} : {'api-key':key,'api-secret':sec};
+      const r=await originalFetch('/api/invx?action=getData',{headers});
+      const d=await r.json();
+      if(r.ok || r.status===401){
+        window._apiKey=key;window._apiSecret=sec;window._apiConnected=true;invxOk=true;
+        document.getElementById('api-dot').style.cssText='background:var(--green);box-shadow:0 0 6px var(--green)';
+        if(d.portfolio&&d.portfolio.length>0){PORTFOLIO=d.portfolio;addLog('ok','✅ โหลดพอร์ตจริง '+d.portfolio.length+' ตัวจาก InnovestX');} 
+        else {addLog('ok','✅ InnovestX เชื่อมแล้ว (ใช้ข้อมูลจำลอง 35 ตัว)');}
+        renderPort();
+      }
+    }catch(e){addLog('warn','INVX: '+e.message);}
+  }
+  try{
+    const r=await originalFetch('/api/ai?action=chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({expertId:'buffett',message:'สวัสดี ทดสอบ',portfolio:[]})});
+    if(r.ok){aiOk=true;document.getElementById('ai-dot').style.cssText='background:var(--green);box-shadow:0 0 6px var(--green)';addLog('ok','✅ AI Gemini พร้อมใช้งาน (ฟรี)');}
+  }catch(e){addLog('warn','Gemini: '+e.message);}
+  
+  if(invxOk && aiOk) { st.textContent='✅ INVX + AI พร้อมทั้งคู่'; st.style.color='var(--green)'; } 
+  else if(invxOk) { st.textContent='✅ INVX พร้อม | ⚠ AI error'; st.style.color='var(--yellow)'; } 
+  else if(aiOk) { st.textContent='⚠ INVX ไม่เชื่อม | ✅ AI พร้อม'; st.style.color='var(--yellow)'; } 
+  else { st.textContent='❌ ทั้งคู่ไม่เชื่อม - ตรวจสอบ Key'; st.style.color='var(--red)'; }
+  
+  if(invxOk||aiOk)showToast((invxOk?'InnovestX ':'')+( aiOk?'AI Gemini ':'')+' เชื่อมแล้ว','ok');
+}
+
+function buildTicker(){
+  const items=PORTFOLIO.slice(0,9);const all=[...items,...items];
+  document.getElementById('tkr').innerHTML=all.map(p=>{
+    const pct=(p.mkt-p.avg)/p.avg*100,c=pct>=0?'#00e676':'#ff1744',s=pct>=0?'+':'';
+    return '<span style="display:inline-flex;gap:8px"><span style="color:var(--gold);font-weight:bold">'+p.sym+'</span><span>'+fmt(p.mkt)+'</span><span style="color:'+c+';font-weight:bold">'+s+pct.toFixed(1)+'%</span></span>';
+  }).join('');
+}
+
+function updateClock(){
+  const n=new Date(),p=x=>String(x).padStart(2,'0');
+  document.getElementById('clk').textContent=p(n.getHours())+':'+p(n.getMinutes())+':'+p(n.getSeconds())+' BKK';
+  const d=n.getDay(),t=n.getHours()*60+n.getMinutes();
+  const open=d>=1&&d<=5&&((t>=600&&t<=750)||(t>=840&&t<=990));
+  const pill=document.getElementById('mktPill');
+  if(open){pill.className='mkt-pill mkt-o';pill.textContent='● ตลาดเปิด';}
+  else{pill.className='mkt-pill mkt-c';pill.textContent='○ ตลาดปิด';}
+}
+
+function addLog(type,msg){
+  const el=document.getElementById('alLog');
+  const n=new Date(),t=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
+  const d=document.createElement('div');d.className='al-row';
+  d.innerHTML='<span class="al-t">'+t+'</span><span class="al-'+type+'" style="font-weight:bold">'+msg+'</span>';
+  el.prepend(d);if(el.children.length>40)el.lastChild.remove();
+}
+
+let _tt3;
+function showToast(msg,type){const e=document.getElementById('toast');clearTimeout(_tt3);e.textContent=msg;e.className='toast on '+(type||'ok');_tt3=setTimeout(()=>e.classList.remove('on'),3500);}
+
+function wobble(){
+  if(window._apiConnected)return;
+  PORTFOLIO.forEach(p=>{p.mkt=Math.max(0.01,p.mkt+(Math.random()-.5)*p.mkt*0.003);});
+  renderPort();
+}
+
+async function setupTelegram() {
+  const st = document.getElementById('tgSt');
+  st.textContent = 'กำลังตั้งค่า...'; st.style.color = 'var(--yellow)';
+  try {
+    const r = await originalFetch('/api/telegram?action=setWebhook');
+    const d = await r.json();
+    if (d.ok) {
+      st.textContent = '✅ Telegram พร้อม'; st.style.color = 'var(--green)';
+      addLog('ok', '✅ Telegram Webhook ตั้งค่าสำเร็จ');
+      await originalFetch('/api/telegram?action=test');
+      showToast('✅ Telegram เชื่อมแล้ว! เช็คโทรศัพท์ได้เลย', 'ok');
+    } else throw new Error(d.description || 'Webhook failed');
+  } catch(e) {
+    st.textContent = '❌ ' + e.message; st.style.color = 'var(--red)';
+    addLog('err', 'Telegram: ' + e.message);
+    showToast('Telegram error: ตรวจสอบ Environment Variables', 'err');
+  }
+}
+
+async function sendTelegramSellAlert(sym, qty, price, pnlPct) {
+  const p = PORTFOLIO.find(x => x.sym === sym);
+  let reason = 'ราคาต่ำกว่าต้นทุนมาก ควร Cut Loss เพื่อนำเงินไปลงทุนในโอกาสที่ดีกว่า';
+  try {
+    const r = await callAI('chat', {expertId: 'minervini',message: 'อธิบายเหตุผลที่ควรขาย ' + sym + ' ใน 2 ประโยค สั้นๆ',portfolio: PORTFOLIO});
+    if (r?.reply) reason = r.reply;
+  } catch(e) {}
+
+  await originalFetch('/api/telegram?action=sellAlert', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sym, qty, price, reason, pnlPct })
+  });
+  addLog('info', '📱 ส่ง Sell Alert ไป Telegram: ' + sym);
+  showToast('ส่งแจ้งเตือนไป Telegram แล้ว!', 'ok');
+}
+
+async function sendMorningBriefTG() {
+  await originalFetch('/api/telegram?action=morning');
+  addLog('ok', '📱 ส่ง Morning Brief ไป Telegram แล้ว');
+  showToast('Morning Brief ส่งไป Telegram แล้ว', 'ok');
+}
+
+function tgAlertBtn(el){sendTelegramSellAlert(el.dataset.sym,parseInt(el.dataset.qty),parseFloat(el.dataset.mkt),parseFloat(el.dataset.pnl));}
+
+const _tgRenderPatch = () => {
+  const _orig = window.renderSummary;
+  if (_orig && _orig !== _tgRenderPatch) {
+    window.renderSummary = function() {
+      _orig.call(this);
+      setTimeout(buildCutsWithTG, 50);
+    };
+  }
+};
+window.addEventListener('load', _tgRenderPatch);
+
+document.addEventListener('DOMContentLoaded', () => {
+  const briefBtn = document.querySelector('[onclick="loadDailyBrief()"]');
+  if (briefBtn) {
+    const tgBtn = document.createElement('button');
+    tgBtn.innerHTML = '📱 ส่ง Telegram';
+    tgBtn.style.cssText = 'background:rgba(0,136,204,.12);border:1px solid #0088cc;color:#0088cc;font-family:monospace;font-size:11px;padding:4px 12px;border-radius:6px;cursor:pointer;margin-left:10px;font-weight:bold';
+    tgBtn.onclick = sendMorningBriefTG;
+    briefBtn.parentNode.appendChild(tgBtn);
+  }
+});
+
+const INIT=[
+  {t:'ok',  m:'Investment Avengers v8 AI Council Edition — พร้อมแล้ว!'},
+  {t:'info',m:'AI Agents 5 ตัวพร้อมประชุม ถกเถียง และตัดสินใจอัตโนมัติ'},
+  {t:'ok',  m:'Game System: XP, Level, Achievement ออนไลน์แล้ว'},
+];
+INIT.forEach((l,i)=>setTimeout(()=>addLog(l.t,l.m),i*500));
+renderPort(); renderTxLog();
+setTimeout(autoInit, 500);
+setInterval(updateClock,1000); updateClock();
+setInterval(wobble,5000);
+
+// ══════════════════════════════════════════════════════════
+//  GAME SYSTEM — XP, Level, Achievements
+// ══════════════════════════════════════════════════════════
+const GAME = {
+  xp: parseInt(localStorage.getItem('avengers_xp')||'0'),
+  level: parseInt(localStorage.getItem('avengers_level')||'1'),
+  streak: parseInt(localStorage.getItem('avengers_streak')||'0'),
+  achievements: JSON.parse(localStorage.getItem('avengers_ach')||'[]'),
+  autoMode: false,
+};
+
+const ACHIEVEMENTS = [
+  {id:'first_connect',  icon:'⚡', title:'First Blood',       desc:'เชื่อมต่อ API ครั้งแรกสำเร็จ',          xp:50},
+  {id:'first_council',  icon:'🏛', title:'Council Summoned',  desc:'เรียกประชุม AI Council ครั้งแรก',         xp:100},
+  {id:'first_trade',    icon:'💰', title:'Trader Awakens',    desc:'ส่ง Order จริงครั้งแรก',                 xp:150},
+  {id:'debate_watcher', icon:'⚔️', title:'Debate Watcher',   desc:'ดูการโต้เถียง AI ครบ 5 รอบ',            xp:80},
+  {id:'briefed',        icon:'📋', title:'Morning Warrior',   desc:'อ่าน Daily Brief แล้ว',                  xp:40},
+  {id:'stress_tested',  icon:'💥', title:'Antifragile',       desc:'รัน Stress Test พอร์ต',                  xp:60},
+  {id:'auto_mode',      icon:'🤖', title:'Fully Autonomous',  desc:'เปิด Autonomous Mode',                   xp:200},
+  {id:'council_x5',     icon:'🎖️', title:'Grand Council',    desc:'ประชุม Council ครบ 5 ครั้ง',             xp:120},
+];
+
+const XP_PER_LEVEL = [0,100,250,500,900,1500,2400,3600,5000,7000,10000];
+
+function saveGame(){
+  localStorage.setItem('avengers_xp',GAME.xp);
+  localStorage.setItem('avengers_level',GAME.level);
+  localStorage.setItem('avengers_streak',GAME.streak);
+  localStorage.setItem('avengers_ach',JSON.stringify(GAME.achievements));
+}
+
+function addXP(amount){
+  GAME.xp += amount;
+  const threshold = XP_PER_LEVEL[Math.min(GAME.level, XP_PER_LEVEL.length-1)] || 100;
+  const prev = XP_PER_LEVEL[Math.min(GAME.level-1, XP_PER_LEVEL.length-1)] || 0;
+  if(GAME.xp >= threshold && GAME.level < 10){
+    GAME.level++;
+    unlockAchievement(null, null, null, true);
+    showToast(`🎉 Level Up! ตอนนี้ LV.${GAME.level}`, 'ok');
+    addLog('ok', `⬆️ Level Up! → LV.${GAME.level}`);
+  }
+  saveGame();
+  renderGameBar();
+}
+
+function unlockAchievement(id, icon, desc, levelUp = false){
+  if(id && GAME.achievements.includes(id)) return;
+  if(id) GAME.achievements.push(id);
+  const ach = id ? ACHIEVEMENTS.find(a=>a.id===id) : null;
+  const popup = document.getElementById('achPopup');
+  if(levelUp){
+    document.getElementById('achIcon').textContent = '⬆️';
+    document.getElementById('achTitle').textContent = `Level ${GAME.level} Reached!`;
+    document.getElementById('achDesc').textContent = `คุณเก่งขึ้น! กลายเป็น ${getLevelTitle(GAME.level)}`;
+  } else if(ach){
+    document.getElementById('achIcon').textContent = ach.icon;
+    document.getElementById('achTitle').textContent = ach.title;
+    document.getElementById('achDesc').textContent = ach.desc + ` (+${ach.xp} XP)`;
+    addXP(ach.xp);
+    addLog('ok', `🏆 Achievement: ${ach.title}`);
+  }
+  popup.classList.add('show');
+  setTimeout(()=>popup.classList.remove('show'), 3500);
+  if(id) saveGame();
+}
+
+function getLevelTitle(lv){
+  const titles=['','Rookie','Analyst','Strategist','Expert','Senior Expert','Portfolio Master','Investment Legend','Grand Master','Enlightened','Investment God'];
+  return titles[Math.min(lv, titles.length-1)] || 'Master';
+}
+
+function renderGameBar(){
+  const lv = GAME.level;
+  const threshold = XP_PER_LEVEL[Math.min(lv, XP_PER_LEVEL.length-1)] || 100;
+  const prevXP = XP_PER_LEVEL[Math.min(lv-1, XP_PER_LEVEL.length-1)] || 0;
+  const progress = Math.min(100, ((GAME.xp - prevXP) / (threshold - prevXP)) * 100);
+  document.getElementById('xpBar').style.width = progress + '%';
+  document.getElementById('xpLabel').textContent = GAME.xp + '/' + threshold;
+  document.getElementById('levelBadge').textContent = `⚔ LV.${lv} ${getLevelTitle(lv)}`;
+  document.getElementById('statStreak').innerHTML = GAME.streak + ' <span class="streak-fire">🔥</span>';
+  // Portfolio power = total market value / 1000
+  const tt = window._tt || {tm:0,tc:0};
+  const power = Math.round(tt.tm / 1000);
+  document.getElementById('statPower').textContent = power > 0 ? power.toLocaleString() : '—';
+  const wins = PORTFOLIO.filter(p=>p.mkt > p.avg).length;
+  const wr = PORTFOLIO.length > 0 ? Math.round(wins/PORTFOLIO.length*100) : 0;
+  document.getElementById('statWinRate').textContent = wr + '%';
+}
+
+function showDailyQuest(){
+  const quests = [
+    'วิเคราะห์หุ้น 3 ตัวที่ขาดทุนมากที่สุด',
+    'ประชุม AI Council 1 ครั้งวันนี้',
+    'อ่าน Daily Brief แล้วส่ง Telegram',
+    'ทำ Stress Test พอร์ตเพื่อเช็ค Risk',
+    'ตรวจสอบหุ้น Cut! ทุกตัวในพอร์ต',
+  ];
+  const today = new Date().getDate();
+  const quest = quests[today % quests.length];
+  showToast('⚡ Quest วันนี้: '+quest, 'warn');
+  addLog('info', '⚡ Quest: '+quest);
+}
+
+function toggleAutoMode(){
+  GAME.autoMode = !GAME.autoMode;
+  const badge = document.getElementById('autoBadge');
+  const dot = document.getElementById('autoDot');
+  const label = document.getElementById('autoLabel');
+  if(GAME.autoMode){
+    badge.classList.remove('off');
+    dot.classList.remove('off');
+    label.textContent = 'AUTO ON';
+    addLog('ok','🤖 Autonomous Mode เปิดแล้ว — AI จะประชุมทุก 30 นาที');
+    showToast('🤖 Autonomous Mode: ON', 'ok');
+    unlockAchievement('auto_mode');
+    startAutoCouncil();
+  } else {
+    badge.classList.add('off');
+    dot.classList.add('off');
+    label.textContent = 'AUTO OFF';
+    addLog('warn','Autonomous Mode ปิดแล้ว');
+    showToast('Autonomous Mode: OFF', 'warn');
+    if(window._autoCouncilTimer) clearTimeout(window._autoCouncilTimer);
+  }
+}
+
+function startAutoCouncil(){
+  if(!GAME.autoMode) return;
+  addLog('info','🤖 Auto Council: กำลังประชุมวิเคราะห์พอร์ต...');
+  runPortfolioCouncil(true);
+  window._autoCouncilTimer = setTimeout(startAutoCouncil, 30 * 60 * 1000);
+}
+
+// ══════════════════════════════════════════════════════════
+//  AI COUNCIL CHAMBER
+// ══════════════════════════════════════════════════════════
+const AGENT_COLORS = {
+  buffett:'#ffc107', minervini:'#ff1744', niwes:'#ff9100',
+  dalio:'#e040fb', lynch:'#00e676'
+};
+const AGENT_EMOJI = {
+  buffett:'🎩', minervini:'⚡', niwes:'📚', dalio:'⚖️', lynch:'🚀'
+};
+
+let councilRunCount = 0;
+
+async function callAgents(action, payload){
+  const res = await originalFetch('/api/agents?action='+action, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(payload)
+  });
+  if(!res.ok) throw new Error('Council API error: '+res.status);
+  const ct = res.headers.get('content-type');
+  if(!ct || !ct.includes('application/json')) throw new Error('Council ไม่ตอบ');
+  return res.json();
+}
+
+function setChamberThinking(){
+  document.getElementById('chamber').innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:180px;gap:16px">
+      <div class="thinking-dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+      <span style="font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--dim)">Agents กำลังคิดและถกเถียงกัน...</span>
+    </div>`;
+  document.getElementById('councilVerdict').innerHTML = '';
+}
+
+function renderCouncilResult(data){
+  const chamber = document.getElementById('chamber');
+  chamber.innerHTML = '';
+
+  const phaseLabel = {initial:'ความเห็นเริ่มต้น', debate:'โต้แย้ง'};
+
+  data.transcript.forEach((msg, i) => {
+    const color = AGENT_COLORS[msg.agent] || '#ffc107';
+    const emoji = AGENT_EMOJI[msg.agent] || '🤖';
+    const phase = msg.phase || 'initial';
+    const phaseClass = phase === 'debate' ? 'debate' : '';
+    const div = document.createElement('div');
+    div.className = 'agent-msg';
+    div.style.animationDelay = (i * 0.12) + 's';
+    div.innerHTML = `
+      <div class="agent-avatar" style="border-color:${color};background:${color}18">
+        <span>${emoji}</span>
+      </div>
+      <div class="agent-bubble">
+        <div class="agent-bubble-hdr">
+          <span class="agent-name" style="color:${color}">${msg.name}</span>
+          <span class="phase-badge ${phaseClass}">${phaseLabel[phase] || phase}</span>
+        </div>
+        <div class="agent-text" style="border-color:${color}80">
+          ${msg.text.replace(/\n/g,'<br>')}
+        </div>
+      </div>`;
+    chamber.appendChild(div);
+  });
+
+  if(data.verdict){
+    document.getElementById('councilVerdict').innerHTML = `
+      <div class="verdict-box">
+        <div class="verdict-hdr">⚖️ มติที่ประชุม — ผลสรุปจาก Council</div>
+        <div style="line-height:1.9">${data.verdict.replace(/\n/g,'<br>')}</div>
+      </div>`;
+  }
+
+  // animate characters to meeting spot
+  chars.forEach(ch => {
+    if(Object.keys(AGENT_COLORS).includes(ch.e.id)){
+      startWalk(ch, MEETING.x + (Math.random()-.5)*.12, MEETING.y + (Math.random()-.5)*.05);
+    }
+  });
+  setTimeout(() => chars.forEach(ch => startWalk(ch, ch.desk.x, ch.desk.y)), 8000);
+}
+
+async function runPortfolioCouncil(silent = false){
+  if(!silent) switchTab('council', document.querySelector('[data-tab="council"]'));
+  const status = document.getElementById('councilStatus');
+  status.textContent = '🏛 ประชุม: วิเคราะห์พอร์ตทั้งหมด...';
+  status.className = 'council-status active';
+  setChamberThinking();
+  try {
+    const data = await callAgents('portfolio', {portfolio: PORTFOLIO});
+    renderCouncilResult(data);
+    status.textContent = `✅ ประชุมเสร็จ — ${data.agentCount} agents ร่วมประชุม`;
+    status.className = 'council-status';
+    councilRunCount++;
+    addXP(30);
+    addLog('ok', '🏛 Council: ประชุมวิเคราะห์พอร์ตเสร็จแล้ว');
+    unlockAchievement('first_council');
+    if(councilRunCount >= 5) unlockAchievement('council_x5');
+    // Show bubble on chars
+    chars.forEach(ch => {
+      if(Object.keys(AGENT_COLORS).includes(ch.e.id)){
+        ch.speechText = '📊 ประชุม!'; ch.speechTimer = 5;
+      }
+    });
+  } catch(err){
+    document.getElementById('chamber').innerHTML = `<div style="color:var(--red);padding:20px">❌ ${err.message}</div>`;
+    status.textContent = '❌ ' + err.message;
+    status.className = 'council-status';
+    addLog('err','Council error: '+err.message);
+  }
+}
+
+async function runMarketCouncil(){
+  switchTab('council', document.querySelector('[data-tab="council"]'));
+  const status = document.getElementById('councilStatus');
+  status.textContent = '🌍 ประชุม: วิเคราะห์ภาพรวมตลาด...';
+  status.className = 'council-status active';
+  setChamberThinking();
+  try {
+    const data = await callAgents('market', {});
+    renderCouncilResult(data);
+    status.textContent = '✅ ประชุมภาพรวมตลาดเสร็จ';
+    status.className = 'council-status';
+    councilRunCount++;
+    addXP(25);
+    addLog('ok','🌍 Council: ภาพรวมตลาดเสร็จแล้ว');
+    unlockAchievement('first_council');
+  } catch(err){
+    document.getElementById('chamber').innerHTML = `<div style="color:var(--red);padding:20px">❌ ${err.message}</div>`;
+    status.textContent = '❌ ' + err.message;
+    status.className = 'council-status';
+  }
+}
+
+async function runCustomCouncil(){
+  const topic = document.getElementById('councilTopic').value.trim();
+  if(!topic){ showToast('ใส่หัวข้อก่อน','warn'); return; }
+  switchTab('council', document.querySelector('[data-tab="council"]'));
+  const status = document.getElementById('councilStatus');
+  status.textContent = '⚔️ ประชุม: ' + topic.slice(0,40) + '...';
+  status.className = 'council-status active';
+  setChamberThinking();
+  try {
+    const portCtx = PORTFOLIO.length > 0 ? 'พอร์ตปัจจุบัน: '+PORTFOLIO.map(p=>p.sym+'('+((p.mkt-p.avg)/p.avg*100).toFixed(0)+'%)').join(', ') : '';
+    const data = await callAgents('council', {topic, context: portCtx});
+    renderCouncilResult(data);
+    status.textContent = '✅ ประชุมเสร็จ';
+    status.className = 'council-status';
+    councilRunCount++;
+    addXP(20);
+    document.getElementById('councilTopic').value = '';
+    addLog('ok','⚔️ Council: '+topic.slice(0,30));
+    unlockAchievement('first_council');
+  } catch(err){
+    document.getElementById('chamber').innerHTML = `<div style="color:var(--red);padding:20px">❌ ${err.message}</div>`;
+    status.textContent = '❌ ' + err.message;
+    status.className = 'council-status';
+  }
+}
+
+// Patch actions to award XP (deferred to after DOM ready)
+window.addEventListener('load', function(){
+  const _analyze = window.analyzePortfolio;
+  if(_analyze) window.analyzePortfolio = function(eid){
+    _analyze(eid);
+    setTimeout(()=>{ addXP(15); GAME.streak++; saveGame(); renderGameBar(); }, 100);
+  };
+
+  const _brief = window.loadDailyBrief;
+  if(_brief) window.loadDailyBrief = async function(){
+    await _brief();
+    addXP(10); unlockAchievement('briefed'); renderGameBar();
+  };
+
+  const _stress = window.runStressTest;
+  if(_stress) window.runStressTest = async function(){
+    await _stress();
+    addXP(20); unlockAchievement('stress_tested'); renderGameBar();
+  };
+
+  const _connect = window.connectAll;
+  if(_connect) window.connectAll = async function(){
+    await _connect();
+    addXP(50); unlockAchievement('first_connect');
+    renderGameBar();
+    const qp = document.getElementById('questPill');
+    if(qp){ qp.textContent = '⚔️ Quest: ประชุม Council'; qp.classList.add('done'); }
+  };
+});
+
+// Initial render
+setTimeout(renderGameBar, 800);
+setTimeout(()=>{ if(GAME.level > 1) addLog('ok','ยินดีต้อนรับกลับมา LV.'+GAME.level+' '+getLevelTitle(GAME.level)); }, 1000);
+
+</script>
+</body>
+</html>
