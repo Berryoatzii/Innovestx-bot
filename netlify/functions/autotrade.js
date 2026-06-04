@@ -1,127 +1,81 @@
 // Netlify Scheduled Function: autotrade
-// Runs at 1:30 UTC (8:30 BKK) and 7:30 UTC (14:30 BKK) on weekdays
-// Rule-based Auto Trader — no AI required for decisions, AI only for summary report
+// 7-Layer AI-Graded Auto Trader
+// Schedule: 08:30 BKK (01:30 UTC) + 14:30 BKK (07:30 UTC) Mon-Fri
 
 const https = require('https');
 
-// ── Environment Variables ──────────────────────────────────────────────────────
-const INVX_KEY    = process.env.INVX_KEY       || '';
-const INVX_SECRET = process.env.INVX_SECRET    || '';
+// ── Environment ───────────────────────────────────────────────────────────────
+const INVX_KEY    = process.env.INVX_KEY        || '';
+const INVX_SECRET = process.env.INVX_SECRET     || '';
 const INVX_PIN    = process.env.INVX_PIN        || '';
 const GEMINI_KEY  = process.env.GEMINI_API_KEY  || '';
 const TG_TOKEN    = process.env.TELEGRAM_TOKEN  || '';
 const TG_CHAT_ID  = process.env.TELEGRAM_CHAT_ID || '';
+const TRADE_MODE  = process.env.TRADE_MODE      || 'execute';
 
-// TRADE_MODE: "execute" (default) | "analyze" | "dry_run"
-const TRADE_MODE  = process.env.TRADE_MODE || 'execute';
+// ── Safety limits ─────────────────────────────────────────────────────────────
+const MAX_SELLS_PER_RUN    = 3;      // Never liquidate more than 3 positions per run
+const MIN_CASH_FOR_BUY     = 2000;   // Skip DCA if cash < 2000 baht
+const HARD_CUT_SCORE       = 35;     // Sell if AI final_score < 35
+const GRADE_C_AUTO_SELL    = true;   // Auto-sell Grade C stocks
+const DEEP_LOSS_PCT        = -70;    // Also sell regardless of score if P/L ≤ -70%
 
-// ── Trading Rule Thresholds ────────────────────────────────────────────────────
-const RULE_CUT_LOSS_PCT    = -70;  // Hard cut loss — sell immediately
-const RULE_DEEP_CUT_PCT    = -50;  // Deep cut loss — sell immediately
-const RULE_TAKE_PROFIT_PCT = +30;  // Take profit alert (no auto-sell)
-const RULE_DCA_MIN_PCT     = -20;  // DCA zone lower bound
-const RULE_DCA_MAX_PCT     = -40;  // DCA zone upper bound (note: -40 < -20)
-const MAX_SELLS_PER_RUN    = 3;    // Safety: never liquidate more than 3 per run
-const MIN_CASH_FOR_BUY     = 1000; // Skip BUY if cash < 1000 baht
+// ── Utility ───────────────────────────────────────────────────────────────────
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// ── Utility: sleep ─────────────────────────────────────────────────────────────
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ── HTTPS helper: returns { statusCode, body } or { error } ───────────────────
 function httpsRequest(opts, postBody) {
   return new Promise((resolve) => {
     const req = https.request(opts, (res) => {
-      let d = '';
-      res.on('data', (c) => (d += c));
+      let d = ''; res.on('data', c => d += c);
       res.on('end', () => resolve({ statusCode: res.statusCode, body: d }));
     });
-    req.on('error', (err) => resolve({ error: err.message }));
-    req.setTimeout(15000, () => {
-      req.destroy();
-      resolve({ error: 'timeout' });
-    });
+    req.on('error', err => resolve({ error: err.message }));
+    req.setTimeout(20000, () => { req.destroy(); resolve({ error: 'timeout' }); });
     if (postBody) req.write(postBody);
     req.end();
   });
 }
 
-// ── InnovestX: fetch portfolio ─────────────────────────────────────────────────
+// ── InnovestX: fetch portfolio ────────────────────────────────────────────────
 async function fetchPortfolio() {
   if (!INVX_KEY || !INVX_SECRET) throw new Error('INVX_KEY or INVX_SECRET not set');
-
   const opts = {
     hostname: 'trade.innovestx.co.th',
     path: `/api/api-portal/v1/equity/${INVX_KEY}/portfolio`,
     method: 'GET',
-    headers: {
-      'api-key': INVX_KEY,
-      'api-secret': INVX_SECRET,
-    },
+    headers: { 'api-key': INVX_KEY, 'api-secret': INVX_SECRET },
   };
-
-  const result = await httpsRequest(opts);
-  if (result.error) throw new Error('Portfolio fetch failed: ' + result.error);
-  if (result.statusCode !== 200) throw new Error(`Portfolio API returned ${result.statusCode}: ${result.body}`);
-
-  try {
-    return JSON.parse(result.body);
-  } catch (e) {
-    throw new Error('Portfolio response parse error: ' + result.body.substring(0, 200));
-  }
+  const r = await httpsRequest(opts);
+  if (r.error) throw new Error('Portfolio fetch: ' + r.error);
+  if (r.statusCode !== 200) throw new Error(`Portfolio API ${r.statusCode}: ${r.body.slice(0,200)}`);
+  try { return JSON.parse(r.body); }
+  catch { throw new Error('Portfolio parse error: ' + r.body.slice(0,200)); }
 }
 
-// ── InnovestX: normalize portfolio response ────────────────────────────────────
-// Returns array of { sym, qty, avg, mkt, pnlPct, unrealizedPnl }
 function normalizePortfolio(raw) {
-  const items = Array.isArray(raw)
-    ? raw
-    : (raw?.data?.positions || raw?.positions || raw?.data || []);
-
-  return items
-    .map((p) => {
-      const sym = p.symbol || p.ticker || p.Symbol || p.stockCode || '';
-      const qty = Number(p.volume || p.quantity || p.Volume || p.availableVolume || 0);
-      const avg = Number(p.avgCost || p.avg_cost || p.AvgCost || p.averageCost || 0);
-      const mkt = Number(p.lastPrice || p.last || p.Last || p.marketPrice || avg);
-      const unrealizedPnl = avg > 0 ? (mkt - avg) * qty : 0;
-      const pnlPct = avg > 0 ? ((mkt - avg) / avg) * 100 : 0;
-      return { sym, qty, avg, mkt, pnlPct, unrealizedPnl };
-    })
-    .filter((p) => p.sym && p.qty > 0);
+  const items = Array.isArray(raw) ? raw : (raw?.data?.positions || raw?.positions || raw?.data || []);
+  return items.map(p => {
+    const sym = p.symbol || p.ticker || p.Symbol || p.stockCode || '';
+    const qty = Number(p.volume || p.quantity || p.Volume || p.availableVolume || 0);
+    const avg = Number(p.avgCost || p.avg_cost || p.AvgCost || p.averageCost || 0);
+    const mkt = Number(p.lastPrice || p.last || p.Last || p.marketPrice || avg);
+    const pnlPct = avg > 0 ? ((mkt - avg) / avg) * 100 : 0;
+    return { sym, qty, avg, mkt, pnlPct, unrealizedPnl: (mkt - avg) * qty };
+  }).filter(p => p.sym && p.qty > 0);
 }
 
-// ── InnovestX: get cash balance ────────────────────────────────────────────────
-// Returns cash amount in baht (best-effort; returns 0 if unavailable)
-function extractCashBalance(raw) {
+function extractCash(raw) {
   try {
     const d = raw?.data || raw;
-    return Number(
-      d?.cashBalance || d?.cash || d?.availableCash || d?.settledCash || 0
-    );
-  } catch (e) {
-    return 0;
-  }
+    return Number(d?.cashBalance || d?.cash || d?.availableCash || 0);
+  } catch { return 0; }
 }
 
-// ── InnovestX: place order ─────────────────────────────────────────────────────
+// ── InnovestX: place order ────────────────────────────────────────────────────
 async function placeOrder(ticker, side, quantity) {
-  if (!INVX_KEY || !INVX_SECRET) throw new Error('Missing INVX credentials');
-
-  const orderBody = {
-    ticker,
-    side,            // "Buy" or "Sell"
-    quantity,
-    order_type: 'MP-MTL',
-    api_secret: INVX_SECRET,
-  };
-
-  // Include PIN if configured
+  const orderBody = { ticker, side, quantity, order_type: 'MP-MTL', api_secret: INVX_SECRET };
   if (INVX_PIN) orderBody.pin = INVX_PIN;
-
   const bodyStr = JSON.stringify(orderBody);
-
   const opts = {
     hostname: 'trade.innovestx.co.th',
     path: `/api/api-portal/v1/equity/${INVX_KEY}`,
@@ -129,416 +83,305 @@ async function placeOrder(ticker, side, quantity) {
     headers: {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(bodyStr),
-      'api-key': INVX_KEY,
-      'api-secret': INVX_SECRET,
+      'api-key': INVX_KEY, 'api-secret': INVX_SECRET,
     },
   };
-
-  const result = await httpsRequest(opts, bodyStr);
-  if (result.error) return { success: false, error: result.error };
-
+  const r = await httpsRequest(opts, bodyStr);
+  if (r.error) return { success: false, error: r.error };
   try {
-    const parsed = JSON.parse(result.body);
-    if (result.statusCode === 200 || result.statusCode === 201) {
-      return { success: true, orderId: parsed?.orderId || parsed?.order_id || parsed?.data?.orderId || 'OK', raw: parsed };
+    const parsed = JSON.parse(r.body);
+    if (r.statusCode === 200 || r.statusCode === 201) {
+      return { success: true, orderId: parsed?.orderId || parsed?.order_id || parsed?.data?.orderId || 'OK' };
     }
-    return { success: false, statusCode: result.statusCode, error: parsed?.message || parsed?.error || result.body.substring(0, 200) };
-  } catch (e) {
-    return { success: false, error: 'Response parse error: ' + result.body.substring(0, 200) };
-  }
+    return { success: false, statusCode: r.statusCode, error: parsed?.message || r.body.slice(0,200) };
+  } catch { return { success: false, error: 'Parse error: ' + r.body.slice(0,200) }; }
 }
 
-// ── Gemini: text summary with retry on 429 ────────────────────────────────────
-async function askGemini(prompt) {
-  if (!GEMINI_KEY) return null;
+// ── 7-Layer AI Analysis (calls /api/agents internally via internal function) ──
+async function runAIAnalysis(portfolio) {
+  const bodyStr = JSON.stringify({ portfolio });
+  const opts = {
+    hostname: 'generativelanguage.googleapis.com',
+    path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) },
+  };
 
-  const bodyStr = JSON.stringify({
+  // Build a combined regime + stock analysis prompt (1 single API call)
+  const stockList = portfolio.map(s => {
+    const pnl = s.avg > 0 ? ((s.mkt - s.avg) / s.avg * 100).toFixed(1) : '0';
+    return `${s.sym}: ต้นทุน=${s.avg} ราคา=${s.mkt} P/L=${pnl}% จำนวน=${s.qty}หุ้น`;
+  }).join('\n');
+
+  const prompt = `คุณคือ 7-Layer AI Investment System สำหรับตลาดหุ้นไทย SET
+วันที่: ${new Date().toLocaleDateString('th-TH')}
+
+ขั้นตอน:
+1. ประเมิน Market Regime ก่อน
+2. วิเคราะห์แต่ละหุ้นตาม 7 Layers
+
+หุ้นในพอร์ต:
+${stockList}
+
+ตอบ JSON object เดียว:
+{
+  "regime": {
+    "type": "BULL_MOMENTUM|BULL_VALUE|SIDEWAYS|BEAR_DEFENSIVE|RECOVERY",
+    "summary": "สรุปตลาด 1 ประโยค"
+  },
+  "stocks": [
+    {
+      "sym": "SYMBOL",
+      "grade": "A|B|C|D",
+      "value_score": 0-100,
+      "momentum_score": 0-100,
+      "growth_score": 0-100,
+      "risk_score": 0-100,
+      "quant_score": 0-100,
+      "final_score": 0-100,
+      "action": "STRONG_BUY|BUY|WATCHLIST|HOLD|SELL|STRONG_SELL",
+      "cut_eligible": true|false,
+      "dca_eligible": true|false,
+      "reason_th": "เหตุผล 1 ประโยคภาษาไทย"
+    }
+  ]
+}
+
+Grade คือ:
+A = fundamental แข็ง final_score>=65 → ถือ/DCA
+B = ปานกลาง final_score 45-64 → ถือ
+C = แย่/ดอย final_score<45 หรือ P/L<=-60% → ขาย
+D = เก็งกำไร → จำกัด position
+
+ตอบ JSON เท่านั้น`;
+
+  const analysisBodyStr = JSON.stringify({
     contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: 800, temperature: 0.3 },
+    generationConfig: { maxOutputTokens: 2000, temperature: 0.2 },
   });
 
-  const MAX_RETRIES = 3;
-  const RETRY_DELAY_MS = 2000;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const opts = {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const analysisOpts = {
       hostname: 'generativelanguage.googleapis.com',
-      path: '/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY,
+      path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(bodyStr),
-      },
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(analysisBodyStr) },
     };
-
-    const result = await httpsRequest(opts, bodyStr);
-
-    if (result.error === 'timeout') {
-      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS); continue; }
-      return null;
-    }
-
-    if (result.error) {
-      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS); continue; }
-      return null;
-    }
-
-    if (result.statusCode === 429) {
-      console.warn(`[Gemini] 429 rate-limit on attempt ${attempt}`);
-      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS * attempt); continue; }
-      return null;
-    }
-
+    const r = await httpsRequest(analysisOpts, analysisBodyStr);
+    if (r.statusCode === 429) { await sleep(3000 * attempt); continue; }
+    if (r.error) { await sleep(2000); continue; }
     try {
-      const p = JSON.parse(result.body);
-      if (p.error) { console.warn('[Gemini] API error:', p.error.message); return null; }
-      return p.candidates?.[0]?.content?.parts?.[0]?.text || null;
-    } catch (e) {
-      return null;
-    }
+      const p = JSON.parse(r.body);
+      const text = p.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const clean = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(clean);
+      if (parsed.regime && Array.isArray(parsed.stocks)) return parsed;
+    } catch {}
+    await sleep(1000);
   }
   return null;
 }
 
-// ── Telegram: send message ─────────────────────────────────────────────────────
+// ── Telegram ──────────────────────────────────────────────────────────────────
 async function sendTelegram(text) {
-  if (!TG_TOKEN || !TG_CHAT_ID) {
-    console.log('[Telegram] No credentials — skipping send');
-    return;
-  }
-
-  const bodyStr = JSON.stringify({
-    chat_id: TG_CHAT_ID,
-    text: text.substring(0, 4096), // Telegram message limit
-    parse_mode: 'HTML',
-  });
-
+  if (!TG_TOKEN || !TG_CHAT_ID) return;
+  const bodyStr = JSON.stringify({ chat_id: TG_CHAT_ID, text: text.slice(0, 4096), parse_mode: 'HTML' });
   const opts = {
     hostname: 'api.telegram.org',
     path: `/bot${TG_TOKEN}/sendMessage`,
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(bodyStr),
-    },
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) },
   };
-
-  const result = await httpsRequest(opts, bodyStr);
-  if (result.error) console.warn('[Telegram] Send failed:', result.error);
+  const r = await httpsRequest(opts, bodyStr);
+  if (r.error) console.warn('[TG]', r.error);
 }
 
-// ── Apply trading rules to a stock ────────────────────────────────────────────
-// Returns { action: "SELL_CUT_LOSS"|"SELL_DEEP_CUT"|"TAKE_PROFIT_ALERT"|"DCA_SIGNAL"|"HOLD", reason }
-function applyRules(stock) {
-  const { pnlPct, qty } = stock;
-
-  if (pnlPct <= RULE_CUT_LOSS_PCT) {
-    return { action: 'SELL_CUT_LOSS', reason: `P/L ${pnlPct.toFixed(1)}% <= ${RULE_CUT_LOSS_PCT}% (Hard Cut Loss)` };
-  }
-
-  if (pnlPct <= RULE_DEEP_CUT_PCT) {
-    return { action: 'SELL_DEEP_CUT', reason: `P/L ${pnlPct.toFixed(1)}% <= ${RULE_DEEP_CUT_PCT}% (Deep Cut)` };
-  }
-
-  if (pnlPct >= RULE_TAKE_PROFIT_PCT) {
-    return { action: 'TAKE_PROFIT_ALERT', reason: `P/L +${pnlPct.toFixed(1)}% >= +${RULE_TAKE_PROFIT_PCT}% (Take Profit Zone)` };
-  }
-
-  // DCA zone: P/L is between -20% and -40% (qty must be > 0, which it always is at this point)
-  if (pnlPct <= RULE_DCA_MIN_PCT && pnlPct >= RULE_DCA_MAX_PCT) {
-    return { action: 'DCA_SIGNAL', reason: `P/L ${pnlPct.toFixed(1)}% in DCA zone (${RULE_DCA_MAX_PCT}% ~ ${RULE_DCA_MIN_PCT}%)` };
-  }
-
-  return { action: 'HOLD', reason: `P/L ${pnlPct.toFixed(1)}% — no action needed` };
-}
-
-// ── Core trading logic (shared between autotrade and trigger) ──────────────────
+// ── CORE TRADER LOGIC ─────────────────────────────────────────────────────────
 async function runAutoTrader(mode) {
   const result = {
-    mode,
-    orders_placed: [],
-    orders_failed: [],
-    analyzed: [],
-    alerts: [],
-    summary: '',
-    timestamp: new Date().toISOString(),
+    mode, orders_placed: [], orders_failed: [],
+    analyzed: [], alerts: [], regime: null,
+    summary: '', timestamp: new Date().toISOString(),
   };
 
   // 1. Fetch portfolio
   let portfolioRaw;
-  try {
-    portfolioRaw = await fetchPortfolio();
-  } catch (err) {
-    const errMsg = `InnovestX portfolio fetch failed: ${err.message}`;
-    console.error(errMsg);
-    if (mode !== 'dry_run') {
-      await sendTelegram(`<b>Auto Trader Error</b>\n${errMsg}`);
-    }
-    result.summary = errMsg;
+  try { portfolioRaw = await fetchPortfolio(); }
+  catch (err) {
+    const msg = `Portfolio fetch failed: ${err.message}`;
+    console.error(msg);
+    if (mode !== 'dry_run') await sendTelegram(`<b>Auto Trader Error</b>\n${msg}`);
+    result.summary = msg;
     return result;
   }
 
   const portfolio = normalizePortfolio(portfolioRaw);
-  const cashBalance = extractCashBalance(portfolioRaw);
-
-  console.log(`[AutoTrader] Mode: ${mode} | Stocks: ${portfolio.length} | Cash: ${cashBalance}`);
+  const cashBalance = extractCash(portfolioRaw);
+  console.log(`[AutoTrader] mode=${mode} stocks=${portfolio.length} cash=${cashBalance}`);
 
   if (portfolio.length === 0) {
-    result.summary = 'Portfolio is empty — nothing to trade.';
-    if (mode !== 'dry_run') {
-      await sendTelegram('📊 <b>Auto Trader:</b> พอร์ตว่างเปล่า ไม่มีหุ้นที่ต้องจัดการ');
-    }
+    result.summary = 'พอร์ตว่างเปล่า';
+    if (mode !== 'dry_run') await sendTelegram('📊 <b>Auto Trader:</b> พอร์ตว่างเปล่า');
     return result;
   }
 
-  // 2. Analyze each stock and build action lists
-  const sellCandidates = [];   // stocks needing sell (cut loss / deep cut)
-  const alertCandidates = [];  // take profit / DCA alerts
+  // 2. Run 7-Layer AI analysis
+  let aiResult = null;
+  if (GEMINI_KEY) {
+    aiResult = await runAIAnalysis(portfolio.slice(0, 20)); // Limit to 20 stocks to stay within timeout
+  }
+
+  // 3. Map AI results back to portfolio stocks
+  const stockMap = {};
+  if (aiResult?.stocks) {
+    aiResult.stocks.forEach(s => { stockMap[s.sym] = s; });
+    result.regime = aiResult.regime;
+  }
+
+  // 4. Determine actions for each stock
+  const sellCandidates = [];
 
   for (const stock of portfolio) {
-    if (stock.avg <= 0) continue;
+    const ai = stockMap[stock.sym];
+    const pnlPct = stock.pnlPct;
 
-    const { action, reason } = applyRules(stock);
+    // Build analysis record
+    const record = {
+      sym: stock.sym, qty: stock.qty, avg: stock.avg, mkt: stock.mkt,
+      pnlPct: parseFloat(pnlPct.toFixed(2)),
+      grade: ai?.grade || (pnlPct <= -70 ? 'C' : pnlPct <= -50 ? 'C' : pnlPct >= 20 ? 'A' : 'B'),
+      final_score: ai?.final_score || Math.max(10, Math.min(90, 50 + pnlPct * 0.4)),
+      action: ai?.action || (pnlPct <= -70 ? 'SELL' : pnlPct <= -50 ? 'SELL' : 'HOLD'),
+      reason_th: ai?.reason_th || `P/L ${pnlPct.toFixed(1)}%`,
+      cut_eligible: ai?.cut_eligible ?? (pnlPct <= DEEP_LOSS_PCT),
+      dca_eligible: ai?.dca_eligible ?? false,
+      value_score: ai?.value_score, momentum_score: ai?.momentum_score,
+      growth_score: ai?.growth_score, risk_score: ai?.risk_score,
+    };
+    result.analyzed.push(record);
 
-    result.analyzed.push({
-      sym: stock.sym,
-      qty: stock.qty,
-      avg: stock.avg,
-      mkt: stock.mkt,
-      pnlPct: parseFloat(stock.pnlPct.toFixed(2)),
-      unrealizedPnl: parseFloat(stock.unrealizedPnl.toFixed(2)),
-      action,
-      reason,
-    });
+    // Determine if should sell
+    const shouldSell = (
+      (GRADE_C_AUTO_SELL && record.grade === 'C') ||
+      record.final_score < HARD_CUT_SCORE ||
+      pnlPct <= DEEP_LOSS_PCT ||
+      record.action === 'STRONG_SELL' || record.action === 'SELL'
+    );
 
-    if (action === 'SELL_CUT_LOSS' || action === 'SELL_DEEP_CUT') {
-      sellCandidates.push({ ...stock, action, reason });
-    } else if (action === 'TAKE_PROFIT_ALERT' || action === 'DCA_SIGNAL') {
-      alertCandidates.push({ ...stock, action, reason });
+    if (shouldSell) sellCandidates.push({ ...record, stock });
+    else if (ai?.dca_eligible && cashBalance >= MIN_CASH_FOR_BUY && record.grade === 'A') {
+      result.alerts.push({ sym: stock.sym, action: 'DCA_SIGNAL', reason: record.reason_th, pnlPct: parseFloat(pnlPct.toFixed(2)) });
+    } else if (record.action === 'BUY' || record.action === 'STRONG_BUY') {
+      result.alerts.push({ sym: stock.sym, action: 'TAKE_PROFIT_ZONE', reason: record.reason_th, pnlPct: parseFloat(pnlPct.toFixed(2)) });
     }
   }
 
-  // Sort sell candidates: worst P/L first (most urgent)
-  sellCandidates.sort((a, b) => a.pnlPct - b.pnlPct);
-
-  // Safety: cap at MAX_SELLS_PER_RUN
+  // 5. Sort sell candidates: worst score first, then worst P/L
+  sellCandidates.sort((a, b) => a.final_score - b.final_score || a.pnlPct - b.pnlPct);
   const sellsToExecute = sellCandidates.slice(0, MAX_SELLS_PER_RUN);
 
-  // 3. Place sell orders (or simulate in analyze/dry_run mode)
-  for (const stock of sellsToExecute) {
+  // 6. Execute or simulate sells
+  for (const candidate of sellsToExecute) {
     const orderInfo = {
-      sym: stock.sym,
-      side: 'Sell',
-      qty: stock.qty,
-      reason: stock.reason,
-      pnlPct: parseFloat(stock.pnlPct.toFixed(2)),
-      mkt: stock.mkt,
+      sym: candidate.sym, side: 'Sell', qty: candidate.qty,
+      grade: candidate.grade, final_score: candidate.final_score,
+      pnlPct: candidate.pnlPct, mkt: candidate.mkt, reason: candidate.reason_th,
     };
 
     if (mode === 'execute') {
-      console.log(`[AutoTrader] Placing SELL: ${stock.sym} x${stock.qty} @ MP-MTL | ${stock.reason}`);
+      console.log(`[AutoTrader] SELL ${candidate.sym} x${candidate.qty} grade=${candidate.grade} score=${candidate.final_score}`);
       try {
-        const orderResult = await placeOrder(stock.sym, 'Sell', stock.qty);
-        if (orderResult.success) {
-          result.orders_placed.push({ ...orderInfo, orderId: orderResult.orderId });
-          console.log(`[AutoTrader] SELL placed: ${stock.sym} orderId=${orderResult.orderId}`);
-        } else {
-          result.orders_failed.push({ ...orderInfo, error: orderResult.error });
-          console.warn(`[AutoTrader] SELL failed: ${stock.sym} — ${orderResult.error}`);
-        }
+        const orderResult = await placeOrder(candidate.sym, 'Sell', candidate.qty);
+        if (orderResult.success) result.orders_placed.push({ ...orderInfo, orderId: orderResult.orderId });
+        else result.orders_failed.push({ ...orderInfo, error: orderResult.error });
       } catch (err) {
         result.orders_failed.push({ ...orderInfo, error: err.message });
-        console.warn(`[AutoTrader] SELL exception: ${stock.sym} — ${err.message}`);
       }
-      // Brief pause between orders to avoid API rate limiting
-      await sleep(1000);
+      await sleep(1200);
     } else {
-      // analyze or dry_run: log without placing
-      result.orders_placed.push({ ...orderInfo, orderId: 'DRY_RUN', note: 'Not placed — mode is ' + mode });
-      console.log(`[AutoTrader][${mode}] Would SELL: ${stock.sym} x${stock.qty} | ${stock.reason}`);
+      result.orders_placed.push({ ...orderInfo, orderId: 'SIMULATE', note: 'Mode: ' + mode });
     }
   }
 
-  // 4. Collect alerts (take profit, DCA) — never execute, just notify
-  for (const stock of alertCandidates) {
-    result.alerts.push({
-      sym: stock.sym,
-      action: stock.action,
-      reason: stock.reason,
-      pnlPct: parseFloat(stock.pnlPct.toFixed(2)),
-      mkt: stock.mkt,
-    });
-  }
+  // 7. Build summary
+  const gradeCount = { A:0, B:0, C:0, D:0 };
+  result.analyzed.forEach(s => { gradeCount[s.grade] = (gradeCount[s.grade] || 0) + 1; });
 
-  // 5. Build summary with AI (falls back to plain text if AI fails)
-  const analyzedSummary = result.analyzed
-    .map((s) => `${s.sym}: ${s.pnlPct >= 0 ? '+' : ''}${s.pnlPct}% (${s.action})`)
-    .join(', ');
+  const plainSummary = [
+    `🤖 Auto Trader [${mode.toUpperCase()}] — ${result.analyzed.length} หุ้น`,
+    `📊 Regime: ${result.regime?.summary || 'ไม่ทราบ'}`,
+    `Grade: A=${gradeCount.A} B=${gradeCount.B} C=${gradeCount.C} D=${gradeCount.D}`,
+    result.orders_placed.filter(o => o.orderId !== 'SIMULATE').length > 0
+      ? `✅ ขายแล้ว: ${result.orders_placed.filter(o=>o.orderId!=='SIMULATE').map(o=>`${o.sym}(${o.pnlPct}%)`).join(', ')}`
+      : result.orders_placed.length > 0
+      ? `📋 จะขาย: ${result.orders_placed.map(o=>`${o.sym}(${o.pnlPct}%)`).join(', ')}`
+      : '✅ ไม่มีหุ้นถึงเกณฑ์ขาย',
+    `💵 เงินสด: ${cashBalance.toLocaleString()} บาท`,
+  ].join('\n');
 
-  const sellsSummary = sellsToExecute
-    .map((s) => `${s.sym} (${s.pnlPct.toFixed(1)}%, ${s.qty} หุ้น)`)
-    .join(', ');
+  result.summary = plainSummary;
 
-  const aiPrompt = `สรุปผลการทำงาน Auto Trader สำหรับพอร์ตหุ้นไทย:
-โหมด: ${mode}
-วันที่: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
-หุ้นที่วิเคราะห์ทั้งหมด: ${result.analyzed.length} ตัว
-หุ้นที่ขาย/จะขาย: ${sellsToExecute.length} ตัว (${sellsSummary || 'ไม่มี'})
-รายละเอียด: ${analyzedSummary}
-เงินสด: ${cashBalance} บาท
-
-สรุปเป็นภาษาไทยสั้นๆ 3-4 ประโยค บอกสถานะพอร์ต สิ่งที่ทำไป และคำแนะนำสั้นๆ:`;
-
-  const aiSummary = await askGemini(aiPrompt);
-
-  // Build plain-text fallback
-  const plainSummary = buildPlainSummary(result, mode, cashBalance);
-  result.summary = aiSummary || plainSummary;
-
-  // 6. Send Telegram report (skip in dry_run mode)
+  // 8. Send Telegram
   if (mode !== 'dry_run') {
-    const tgMsg = buildTelegramMessage(result, mode, cashBalance);
+    const tgMsg = buildTelegramMsg(result, cashBalance, gradeCount);
     await sendTelegram(tgMsg);
-  } else {
-    console.log('[AutoTrader][dry_run] Telegram skipped.');
-    console.log('[AutoTrader][dry_run] Summary:', result.summary);
   }
 
   return result;
 }
 
-// ── Build plain-text summary (AI fallback) ────────────────────────────────────
-function buildPlainSummary(result, mode, cashBalance) {
-  const lines = [];
-  lines.push(`Auto Trader รัน [${mode.toUpperCase()}] | ${result.analyzed.length} หุ้นถูกวิเคราะห์`);
+function buildTelegramMsg(result, cashBalance, gradeCount) {
+  const now = new Date().toLocaleString('th-TH', { timeZone:'Asia/Bangkok', dateStyle:'short', timeStyle:'short' });
+  const modeIcon = result.mode === 'execute' ? '⚡' : '🔍';
+  let msg = `<b>${modeIcon} Auto Trader [${result.mode.toUpperCase()}]</b>\n<i>${now} BKK</i>\n${'─'.repeat(24)}\n\n`;
 
-  if (result.orders_placed.length > 0) {
-    const sold = result.orders_placed.filter((o) => o.orderId !== 'DRY_RUN');
-    const simulated = result.orders_placed.filter((o) => o.orderId === 'DRY_RUN');
-    if (sold.length > 0) lines.push(`ขายแล้ว: ${sold.map((o) => `${o.sym} (${o.pnlPct}%)`).join(', ')}`);
-    if (simulated.length > 0) lines.push(`จะขาย (${mode}): ${simulated.map((o) => `${o.sym} (${o.pnlPct}%)`).join(', ')}`);
-  } else {
-    lines.push('ไม่มีหุ้นถึงเกณฑ์ Cut Loss');
+  if (result.regime) msg += `🌍 <b>Regime:</b> ${result.regime.summary}\n\n`;
+
+  msg += `<b>Grade พอร์ต:</b> 🟢A=${gradeCount.A} 🔵B=${gradeCount.B} 🔴C=${gradeCount.C} ⚫D=${gradeCount.D}\n\n`;
+
+  const executed = result.orders_placed.filter(o => o.orderId !== 'SIMULATE');
+  const simulated = result.orders_placed.filter(o => o.orderId === 'SIMULATE');
+
+  if (executed.length > 0) {
+    msg += `<b>✅ ขายแล้ว (${executed.length})</b>\n`;
+    executed.forEach(o => {
+      msg += `• <b>${o.sym}</b> ${o.qty}หุ้น @ MP-MTL | Grade=${o.grade} Score=${o.final_score}\n  ${o.reason}\n`;
+    });
+    msg += '\n';
   }
-
+  if (simulated.length > 0) {
+    msg += `<b>📋 จะขาย (${simulated.length})</b>\n`;
+    simulated.forEach(o => { msg += `• <b>${o.sym}</b> ${o.qty}หุ้น | Grade=${o.grade} Score=${o.final_score} (${o.pnlPct}%)\n`; });
+    msg += '\n';
+  }
   if (result.orders_failed.length > 0) {
-    lines.push(`ขายไม่สำเร็จ: ${result.orders_failed.map((o) => `${o.sym} (${o.error})`).join(', ')}`);
+    msg += `<b>❌ ขายไม่สำเร็จ</b>\n`;
+    result.orders_failed.forEach(o => { msg += `• ${o.sym}: ${o.error}\n`; });
+    msg += '\n';
   }
-
   if (result.alerts.length > 0) {
-    lines.push(`แจ้งเตือน: ${result.alerts.map((a) => `${a.sym} ${a.action}`).join(', ')}`);
+    const dcas = result.alerts.filter(a => a.action === 'DCA_SIGNAL');
+    if (dcas.length > 0) msg += `<b>🔵 DCA Signal:</b> ${dcas.map(a=>a.sym).join(', ')}\n`;
   }
 
-  lines.push(`เงินสด: ${cashBalance.toLocaleString()} บาท`);
-  return lines.join('\n');
-}
+  const noAction = result.analyzed.filter(s => s.action === 'HOLD' || s.action === 'WATCHLIST');
+  if (noAction.length > 0) msg += `<b>⚪ Hold/Watch:</b> ${noAction.map(s=>s.sym).join(', ')}\n\n`;
 
-// ── Build Telegram HTML message ────────────────────────────────────────────────
-function buildTelegramMessage(result, mode, cashBalance) {
-  const now = new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' });
-  const modeLabel = mode === 'execute' ? '⚡ EXECUTE' : '🔍 ANALYZE';
-
-  let msg = `<b>Auto Trader Report</b> ${modeLabel}\n`;
-  msg += `<i>${now} (BKK)</i>\n`;
-  msg += `${'─'.repeat(28)}\n\n`;
-
-  // Portfolio overview
-  msg += `<b>พอร์ตทั้งหมด (${result.analyzed.length} หุ้น)</b>\n`;
-  for (const s of result.analyzed) {
-    const pnlSign = s.pnlPct >= 0 ? '+' : '';
-    const icon = s.action === 'SELL_CUT_LOSS' ? '🔴' :
-                 s.action === 'SELL_DEEP_CUT'  ? '🟠' :
-                 s.action === 'TAKE_PROFIT_ALERT' ? '🟢' :
-                 s.action === 'DCA_SIGNAL'     ? '🔵' : '⚪';
-    msg += `${icon} <b>${s.sym}</b> ${pnlSign}${s.pnlPct}% | ทุน ${s.avg} | ราคา ${s.mkt}\n`;
-  }
-  msg += '\n';
-
-  // Orders placed
-  if (result.orders_placed.length > 0) {
-    const verb = mode === 'execute' ? 'ขายแล้ว' : 'จะขาย';
-    msg += `<b>${verb} (${result.orders_placed.length} รายการ)</b>\n`;
-    for (const o of result.orders_placed) {
-      const icon = mode === 'execute' ? '✅' : '📋';
-      msg += `${icon} ${o.sym} x${o.qty} หุ้น @ MP-MTL\n`;
-      msg += `   เหตุผล: ${o.reason}\n`;
-      if (mode === 'execute' && o.orderId !== 'DRY_RUN') {
-        msg += `   Order ID: ${o.orderId}\n`;
-      }
-    }
-    msg += '\n';
-  }
-
-  // Failed orders
-  if (result.orders_failed.length > 0) {
-    msg += `<b>ขายไม่สำเร็จ (${result.orders_failed.length} รายการ)</b>\n`;
-    for (const o of result.orders_failed) {
-      msg += `❌ ${o.sym} — ${o.error}\n`;
-    }
-    msg += '\n';
-  }
-
-  // Alerts
-  if (result.alerts.length > 0) {
-    msg += `<b>แจ้งเตือน (${result.alerts.length} รายการ)</b>\n`;
-    for (const a of result.alerts) {
-      const icon = a.action === 'TAKE_PROFIT_ALERT' ? '💰' : '📉';
-      msg += `${icon} ${a.sym}: ${a.reason}\n`;
-    }
-    msg += '\n';
-  }
-
-  // No action needed
-  const noActionCount = result.analyzed.filter((s) => s.action === 'HOLD').length;
-  if (noActionCount > 0) {
-    msg += `<b>ถือต่อ:</b> ${result.analyzed.filter((s) => s.action === 'HOLD').map((s) => s.sym).join(', ')}\n\n`;
-  }
-
-  // AI summary or plain summary
-  msg += `<b>สรุป AI:</b>\n${result.summary || 'ไม่มีสรุป'}\n\n`;
-
-  // Footer
-  msg += `<i>เงินสด: ${cashBalance.toLocaleString()} บาท | Max ${MAX_SELLS_PER_RUN} sells/run</i>`;
-
+  msg += `<i>💵 เงินสด: ${cashBalance.toLocaleString()} บาท | Max ${MAX_SELLS_PER_RUN} sells/run</i>`;
   return msg;
 }
 
-// ── Netlify Scheduled Handler ──────────────────────────────────────────────────
 exports.handler = async (event) => {
-  console.log('[AutoTrader] Scheduled run triggered');
-  console.log('[AutoTrader] Trade mode:', TRADE_MODE);
-
-  if (!INVX_KEY || !INVX_SECRET) {
-    const errMsg = 'Missing INVX_KEY or INVX_SECRET — cannot run Auto Trader';
-    console.error(errMsg);
-    return { statusCode: 500, body: errMsg };
-  }
-
+  console.log('[AutoTrader] Scheduled run | mode:', TRADE_MODE);
+  if (!INVX_KEY || !INVX_SECRET) return { statusCode: 500, body: 'Missing INVX credentials' };
   try {
     const result = await runAutoTrader(TRADE_MODE);
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: 'Auto Trader completed',
-        mode: result.mode,
-        sold: result.orders_placed.length,
-        failed: result.orders_failed.length,
-        analyzed: result.analyzed.length,
-      }),
-    };
+    return { statusCode: 200, body: JSON.stringify({ ok: true, mode: result.mode, sold: result.orders_placed.length }) };
   } catch (err) {
-    const errMsg = `[AutoTrader] Fatal error: ${err.message}`;
-    console.error(errMsg);
-    try {
-      if (TRADE_MODE !== 'dry_run') {
-        await sendTelegram(`<b>Auto Trader Fatal Error</b>\n${err.message}`);
-      }
-    } catch (tgErr) {
-      console.error('[Telegram] Failed to send error notification:', tgErr.message);
-    }
-    return { statusCode: 500, body: errMsg };
+    console.error('[AutoTrader] Fatal:', err);
+    if (TRADE_MODE !== 'dry_run') await sendTelegram(`<b>Auto Trader Fatal Error</b>\n${err.message}`).catch(()=>{});
+    return { statusCode: 500, body: err.message };
   }
 };
 
-// Export runAutoTrader for use by autotrader-trigger.js
 module.exports.runAutoTrader = runAutoTrader;

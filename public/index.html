@@ -159,7 +159,32 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 .explain strong{color:#d0daf0}
 @media(max-width:1000px){.wrap{grid-template-columns:1fr}}
 
-/* ── GAME BAR ── */
+/* ── REGIME BANNER ── */
+.regime-banner{display:flex;align-items:center;gap:12px;padding:8px 18px;background:rgba(0,0,0,.4);border-bottom:1px solid rgba(255,193,7,.12);flex-wrap:wrap}
+.regime-chip{font-family:'Share Tech Mono',monospace;font-size:12px;font-weight:bold;padding:4px 12px;border-radius:20px;border:1px solid}
+.regime-BULL_MOMENTUM{background:rgba(0,230,118,.1);color:var(--green);border-color:rgba(0,230,118,.35)}
+.regime-BULL_VALUE{background:rgba(255,193,7,.1);color:var(--gold);border-color:rgba(255,193,7,.35)}
+.regime-SIDEWAYS{background:rgba(0,229,255,.08);color:var(--accent);border-color:rgba(0,229,255,.3)}
+.regime-BEAR_DEFENSIVE{background:rgba(255,23,68,.1);color:var(--red);border-color:rgba(255,23,68,.3)}
+.regime-RECOVERY{background:rgba(167,139,250,.1);color:#a78bfa;border-color:rgba(167,139,250,.35)}
+.regime-LIQUIDITY_RISK{background:rgba(255,145,0,.1);color:#ff9100;border-color:rgba(255,145,0,.35)}
+
+/* ── GRADE BADGES ── */
+.grade-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-family:'Share Tech Mono',monospace;font-size:11px;font-weight:bold;flex-shrink:0}
+.grade-A{background:rgba(0,230,118,.2);color:var(--green);border:1px solid rgba(0,230,118,.5)}
+.grade-B{background:rgba(0,229,255,.15);color:var(--accent);border:1px solid rgba(0,229,255,.4)}
+.grade-C{background:rgba(255,23,68,.18);color:var(--red);border:1px solid rgba(255,23,68,.4)}
+.grade-D{background:rgba(255,234,0,.12);color:var(--yellow);border:1px solid rgba(255,234,0,.3)}
+
+/* ── SCORE BAR ── */
+.score-bar-wrap{width:60px;height:6px;background:rgba(255,255,255,.08);border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle}
+.score-bar-fill{height:100%;border-radius:3px;transition:width .8s ease}
+
+/* ── 7-LAYER TOOLTIP ── */
+.layer-tooltip{position:relative;cursor:help}
+.layer-tooltip:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100%+6px);left:50%;transform:translateX(-50%);background:rgba(4,6,12,.97);border:1px solid rgba(255,193,7,.3);border-radius:8px;padding:8px 12px;font-size:12px;color:#d0daf0;white-space:nowrap;z-index:1000;font-family:'Sarabun',sans-serif;line-height:1.6;pointer-events:none}
+
+
 .game-bar{background:linear-gradient(90deg,rgba(3,5,8,.98),rgba(10,15,30,.98));border-bottom:1px solid rgba(255,193,7,.25);padding:8px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
 .xp-wrap{display:flex;align-items:center;gap:10px;flex:1;min-width:200px}
 .xp-label{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);white-space:nowrap}
@@ -283,6 +308,14 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 
 <div class="ticker"><div class="ticker-t" id="tkr"></div></div>
 
+<!-- REGIME BANNER -->
+<div class="regime-banner" id="regimeBanner" style="display:none">
+  <span style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim)">🌍 MARKET REGIME</span>
+  <span class="regime-chip" id="regimeChip">—</span>
+  <span id="regimeSummary" style="font-size:13px;color:var(--dim);flex:1"></span>
+  <span id="regimeWeights" style="font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim)"></span>
+</div>
+
 <div class="wrap">
 <div class="left">
 
@@ -404,10 +437,9 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
     <div style="overflow-x:auto">
       <table class="tbl">
         <thead><tr>
-          <th>หุ้น</th><th class="r">ถือ</th><th class="r">ต้นทุน/หุ้น</th>
-          <th class="r">ราคาตลาด</th><th class="r">มูลค่า</th>
-          <th class="r">กำไร/ขาดทุน</th><th class="r">%</th>
-          <th>สถานะ AI</th><th>ซื้อ/ขาย</th>
+          <th>หุ้น</th><th>Grade</th><th class="r">ถือ</th><th class="r">ต้นทุน</th>
+          <th class="r">ราคา</th><th class="r">กำไร/ขาดทุน</th><th class="r">%</th>
+          <th>Score <span style="font-size:9px;color:var(--dim)">(7-Layer)</span></th><th>Action</th><th>Order</th>
         </tr></thead>
         <tbody id="portBody"></tbody>
       </table>
@@ -855,27 +887,83 @@ function fmt(n){return n.toLocaleString('th-TH',{minimumFractionDigits:2,maximum
 function fmtB(n){return '฿'+Math.abs(n).toLocaleString('th-TH',{maximumFractionDigits:0});}
 function sgn(n){return n>=0?'+':'';}
 
+// AI grade/score cache — populated after running 7-layer analysis
+let AI_GRADES = {}; // { SYM: { grade, final_score, action, reason_th, value_score, momentum_score, growth_score, risk_score, quant_score } }
+
+const GRADE_COLORS = { A:'var(--green)', B:'var(--accent)', C:'var(--red)', D:'var(--yellow)' };
+const ACTION_COLORS = {
+  STRONG_BUY:'#00e676', BUY:'#69f0ae', WATCHLIST:'#00e5ff',
+  HOLD:'#546e7a', SELL:'#ff7043', STRONG_SELL:'#ff1744'
+};
+
+function scoreBar(score, color) {
+  if (score == null) return '<span style="color:var(--dim);font-size:11px">—</span>';
+  const w = Math.round(score);
+  return `<div class="score-bar-wrap"><div class="score-bar-fill" style="width:${w}%;background:${color}"></div></div><span style="font-family:monospace;font-size:11px;color:${color};margin-left:4px">${w}</span>`;
+}
+
 function renderPort(){
   let tc=0,tm=0,wPnl=0,lPnl=0;
   document.getElementById('portBody').innerHTML=PORTFOLIO.map(p=>{
     const mv=p.mkt*p.qty,cv=p.avg*p.qty,pnl=mv-cv,pct=pnl/cv*100;
     tc+=cv;tm+=mv;if(pnl>=0)wPnl+=pnl;else lPnl+=pnl;
-    const cls=pnl>=0?'pg':'pr',bc=pnl>=0?'#00e676':'#ff1744',bw=Math.min(100,Math.abs(pct)*1.2);
-    const tag=pct<=-70?{c:'tc',t:'Cut!'}:pct<=-30?{c:'tc',t:'Cut?'}:pct>=10?{c:'td2',t:'Hold'}:{c:'th',t:'Hold'};
-    const rowCls=pct<=-70?'cut':pct>=10?'win':'';
+    const cls=pnl>=0?'pg':'pr',bc=pnl>=0?'#00e676':'#ff1744';
+
+    // AI grade data
+    const ai = AI_GRADES[p.sym] || {};
+    const grade = ai.grade || (pct<=-70?'C':pct<=-50?'C':pct>=20?'A':'B');
+    const gradeColor = GRADE_COLORS[grade] || 'var(--dim)';
+    const score = ai.final_score;
+    const action = ai.action || (pct<=-70?'SELL':pct<=-50?'SELL':'HOLD');
+    const actionColor = ACTION_COLORS[action] || 'var(--dim)';
+
+    // 7-layer tooltip
+    let tipParts = [];
+    if (ai.value_score!=null)    tipParts.push(`Value: ${ai.value_score}`);
+    if (ai.momentum_score!=null) tipParts.push(`Momentum: ${ai.momentum_score}`);
+    if (ai.growth_score!=null)   tipParts.push(`Growth: ${ai.growth_score}`);
+    if (ai.risk_score!=null)     tipParts.push(`Risk: ${ai.risk_score}`);
+    if (ai.quant_score!=null)    tipParts.push(`Quant: ${ai.quant_score}`);
+    if (ai.reason_th)            tipParts.push(ai.reason_th);
+    const tip = tipParts.join(' | ');
+
+    const rowCls = grade==='C'?'cut':grade==='A'?'win':'';
+
     return '<tr class="'+rowCls+'">'
-      +'<td><span class="sym" data-sym="'+p.sym+'" onclick="askAboutStock(this.dataset.sym)">'+p.sym+'</span> <span class="btn-sparkle" title="✨ ให้ AI อธิบายธุรกิจนี้ง่ายๆ" onclick="explainStockELI5(\''+p.sym+'\')">✨</span><span class="tag '+tag.c+'">'+tag.t+'</span></td>'
+      +'<td><span class="sym" data-sym="'+p.sym+'" onclick="askAboutStock(this.dataset.sym)">'+p.sym+'</span><span class="btn-sparkle" onclick="explainStockELI5(\''+p.sym+'\')" title="✨ AI อธิบาย">✨</span></td>'
+      +'<td><span class="grade-badge grade-'+grade+'" title="Grade '+grade+'">'+grade+'</span></td>'
       +'<td class="r">'+p.qty.toLocaleString()+'</td>'
       +'<td class="r">'+fmt(p.avg)+'</td>'
       +'<td class="r" style="color:'+bc+';font-weight:bold">'+fmt(p.mkt)+'</td>'
-      +'<td class="r">'+fmtB(mv)+'</td>'
-      +'<td class="r '+cls+'">'+sgn(pnl)+fmtB(pnl)+'<div class="pnl-bar" style="background:'+bc+';width:'+bw+'%"></div></td>'
+      +'<td class="r '+cls+'" style="white-space:nowrap">'+sgn(pnl)+fmtB(pnl)+' <span style="font-size:11px">('+sgn(pct)+pct.toFixed(1)+'%)</span><div class="pnl-bar" style="background:'+bc+';width:'+Math.min(100,Math.abs(pct)*1.2)+'%"></div></td>'
       +'<td class="r '+cls+'">'+sgn(pct)+pct.toFixed(1)+'%</td>'
-      +'<td style="font-size:12px;color:var(--dim)">'+(AI_TAGS[p.sym]||'')+'</td>'
-      +'<td style="white-space:nowrap"><button class="btn-s" data-sym="'+p.sym+'" data-qty="'+p.qty+'" data-mkt="'+p.mkt.toFixed(2)+'" data-side="SELL" onclick="prepOrderBtn(this)">ขาย</button> <button class="btn-b" data-sym="'+p.sym+'" data-mkt="'+p.mkt.toFixed(2)+'" data-side="BUY" onclick="prepOrderBtn(this)">ซื้อ</button></td>'
+      +'<td class="layer-tooltip" data-tip="'+tip.replace(/"/g,"'")+'">'+(score!=null?scoreBar(score,actionColor):'<span style="color:var(--dim);font-size:11px">กด 7-Layer</span>')+'</td>'
+      +'<td style="font-family:monospace;font-size:11px;color:'+actionColor+';font-weight:bold;white-space:nowrap">'+action.replace('_',' ')+'</td>'
+      +'<td style="white-space:nowrap"><button class="btn-s" data-sym="'+p.sym+'" data-qty="'+p.qty+'" data-mkt="'+p.mkt.toFixed(2)+'" data-side="SELL" onclick="prepOrderBtn(this)">ขาย</button> <button class="btn-b" data-sym="'+p.sym+'" data-mkt="'+p.mkt.toFixed(2)+'" data-side="BUY" onclick="prepOrderBtn(this)">DCA</button></td>'
       +'</tr>';
   }).join('');
   window._tt={tc,tm,wPnl,lPnl};renderSummary();buildTicker();
+}
+
+// Update AI grades from 7-layer analysis result and re-render
+function applyAIGrades(analysisResult) {
+  if (!analysisResult || !Array.isArray(analysisResult.stocks)) return;
+  analysisResult.stocks.forEach(s => { AI_GRADES[s.sym] = s; });
+  renderPort();
+
+  // Show regime banner
+  const regime = analysisResult.regime;
+  if (regime) {
+    const banner = document.getElementById('regimeBanner');
+    const chip   = document.getElementById('regimeChip');
+    const sum    = document.getElementById('regimeSummary');
+    if (banner && chip && sum) {
+      banner.style.display = 'flex';
+      chip.textContent = regime.type || '—';
+      chip.className = 'regime-chip regime-' + (regime.type || 'SIDEWAYS');
+      sum.textContent = regime.summary || '';
+    }
+  }
 }
 
 function renderSummary(){
@@ -1348,30 +1436,118 @@ function renderCouncilResult(data){
 async function runPortfolioCouncil(silent = false){
   if(!silent) switchTab('council', document.querySelector('[data-tab="council"]'));
   const status = document.getElementById('councilStatus');
-  status.textContent = '🏛 ประชุม: วิเคราะห์พอร์ตทั้งหมด...';
+  status.textContent = '🔬 7-Layer AI กำลังวิเคราะห์พอร์ตทั้งหมด...';
   status.className = 'council-status active';
   setChamberThinking();
   try {
     const data = await callAgents('portfolio', {portfolio: PORTFOLIO});
-    renderCouncilResult(data);
-    status.textContent = `✅ ประชุมเสร็จ — ${data.agentCount} agents ร่วมประชุม`;
+
+    // If it returns stocks array (7-layer), render as scored table + apply grades
+    if (data.stocks && Array.isArray(data.stocks)) {
+      applyAIGrades(data);
+      renderCouncilFromLayered(data);
+      status.textContent = `✅ 7-Layer วิเคราะห์ครบ ${data.stocks.length} หุ้น`;
+    } else {
+      // Fallback to old council rendering
+      renderCouncilResult(data);
+      status.textContent = `✅ Council เสร็จ`;
+    }
     status.className = 'council-status';
     councilRunCount++;
-    addXP(30);
-    addLog('ok', '🏛 Council: ประชุมวิเคราะห์พอร์ตเสร็จแล้ว');
+    addXP(50);
+    addLog('ok', '🔬 7-Layer: วิเคราะห์พอร์ตเสร็จแล้ว');
     unlockAchievement('first_council');
     if(councilRunCount >= 5) unlockAchievement('council_x5');
-    // Show bubble on chars
-    chars.forEach(ch => {
-      if(Object.keys(AGENT_COLORS).includes(ch.e.id)){
-        ch.speechText = '📊 ประชุม!'; ch.speechTimer = 5;
-      }
-    });
+    chars.forEach(ch => { if(Object.keys(AGENT_COLORS).includes(ch.e.id)){ ch.speechText='📊 วิเคราะห์!'; ch.speechTimer=5; } });
   } catch(err){
     document.getElementById('chamber').innerHTML = `<div style="color:var(--red);padding:20px">❌ ${err.message}</div>`;
     status.textContent = '❌ ' + err.message;
     status.className = 'council-status';
-    addLog('err','Council error: '+err.message);
+    addLog('err','7-Layer error: '+err.message);
+  }
+}
+
+function renderCouncilFromLayered(data) {
+  const chamber = document.getElementById('chamber');
+  chamber.innerHTML = '';
+
+  const regime = data.regime || {};
+  const stocks = data.stocks || [];
+  const summary = data.summary || {};
+
+  // Regime header
+  if (regime.type) {
+    const rd = document.createElement('div');
+    rd.style.cssText = 'margin-bottom:16px;padding:12px;background:rgba(255,193,7,.04);border:1px solid rgba(255,193,7,.2);border-radius:10px';
+    rd.innerHTML = `<div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--gold);font-weight:bold;margin-bottom:6px">🌍 MARKET REGIME: ${regime.type}</div><div style="font-size:14px;line-height:1.7">${regime.summary || ''}</div>`;
+    chamber.appendChild(rd);
+  }
+
+  // Grade summary
+  if (summary.grade_count) {
+    const gc = summary.grade_count;
+    const gd = document.createElement('div');
+    gd.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px';
+    const gradeData = [
+      {g:'A',color:'var(--green)',  label:'Core Hold'},
+      {g:'B',color:'var(--accent)', label:'Trade'},
+      {g:'C',color:'var(--red)',    label:'Exit NOW'},
+      {g:'D',color:'var(--yellow)', label:'Speculative'},
+    ];
+    gradeData.forEach(({g,color,label}) => {
+      const count = gc[g] || 0;
+      gd.innerHTML += `<div style="background:rgba(255,255,255,.04);border:1px solid ${color}40;border-radius:8px;padding:10px 16px;text-align:center;min-width:80px"><div style="font-family:'Cinzel',serif;font-size:20px;color:${color};font-weight:bold">${count}</div><div style="font-family:monospace;font-size:10px;color:${color}">Grade ${g}</div><div style="font-size:11px;color:var(--dim)">${label}</div></div>`;
+    });
+    chamber.appendChild(gd);
+  }
+
+  // Stocks grouped by grade
+  const gradeOrder = ['C','D','B','A'];
+  const grouped = {};
+  stocks.forEach(s => { (grouped[s.grade] = grouped[s.grade]||[]).push(s); });
+
+  gradeOrder.forEach(grade => {
+    const grp = grouped[grade];
+    if (!grp || grp.length === 0) return;
+    const color = GRADE_COLORS[grade] || 'var(--dim)';
+    const labels = {A:'🟢 Grade A — Core Hold (ถือยาว)',B:'🔵 Grade B — Trade (ระวัง)',C:'🔴 Grade C — Exit ทันที',D:'⚫ Grade D — Speculative'};
+
+    const section = document.createElement('div');
+    section.style.cssText = 'margin-bottom:16px';
+    let html = `<div style="font-family:monospace;font-size:12px;color:${color};font-weight:bold;margin-bottom:8px">${labels[grade]||grade} (${grp.length})</div>`;
+
+    grp.sort((a,b) => a.adjusted_score - b.adjusted_score || a.final_score - b.final_score).forEach(s => {
+      const sc = s.adjusted_score || s.final_score || 0;
+      const scoreColor = sc >= 75 ? 'var(--green)' : sc >= 50 ? 'var(--accent)' : sc >= 35 ? 'var(--yellow)' : 'var(--red)';
+      html += `<div style="display:flex;gap:10px;align-items:center;padding:7px 10px;background:rgba(255,255,255,.02);border-left:3px solid ${color};border-radius:0 6px 6px 0;margin-bottom:5px;animation:fadeSlideIn .4s ease">`;
+      html += `<span style="font-family:monospace;font-size:13px;font-weight:bold;color:var(--gold);min-width:60px">${s.sym}</span>`;
+      html += `<div class="score-bar-wrap" style="width:80px"><div class="score-bar-fill" style="width:${sc}%;background:${scoreColor}"></div></div>`;
+      html += `<span style="font-family:monospace;font-size:12px;color:${scoreColor}">${sc}</span>`;
+      html += `<span style="font-family:monospace;font-size:11px;color:${ACTION_COLORS[s.final_action||s.action]||'var(--dim)'}">${(s.final_action||s.action||'').replace('_',' ')}</span>`;
+      html += `<span style="font-size:12px;color:var(--dim);flex:1">${s.reason_th||''}</span>`;
+      html += `</div>`;
+    });
+    section.innerHTML = html;
+    chamber.appendChild(section);
+  });
+
+  // Avg score
+  if (summary.avg_portfolio_score) {
+    const footer = document.createElement('div');
+    footer.style.cssText = 'margin-top:12px;padding:12px;background:rgba(255,193,7,.04);border:1px solid rgba(255,193,7,.15);border-radius:8px;text-align:center';
+    footer.innerHTML = `<div style="font-family:'Cinzel',serif;font-size:22px;color:var(--gold);font-weight:bold">${summary.avg_portfolio_score}<span style="font-size:14px">/100</span></div><div style="font-family:monospace;font-size:11px;color:var(--dim)">PORTFOLIO SCORE (7-Layer Avg)</div>`;
+    chamber.appendChild(footer);
+  }
+
+  // Verdict box
+  if (summary.sell_urgently?.length > 0 || summary.buy_dca?.length > 0) {
+    document.getElementById('councilVerdict').innerHTML = `
+      <div class="verdict-box">
+        <div class="verdict-hdr">⚖️ มติ — การตัดสินใจ</div>
+        ${summary.sell_urgently?.length>0 ? `<div style="color:var(--red);margin-bottom:8px">🔴 <strong>ควรขาย/Cut ด่วน:</strong> ${summary.sell_urgently.join(', ')}</div>` : ''}
+        ${summary.buy_dca?.length>0 ? `<div style="color:var(--green);margin-bottom:8px">🟢 <strong>BUY/DCA Signal:</strong> ${summary.buy_dca.join(', ')}</div>` : ''}
+        ${summary.watchlist?.length>0 ? `<div style="color:var(--accent)">👁 <strong>Watchlist:</strong> ${summary.watchlist.join(', ')}</div>` : ''}
+      </div>`;
   }
 }
 
@@ -1520,6 +1696,12 @@ async function triggerAutoTrader(mode) {
     if(data.orders_placed?.length > 0 && mode === 'execute') {
       showToast(`✅ ขายแล้ว ${data.orders_placed.length} หุ้น`, 'ok');
       unlockAchievement('first_trade');
+    }
+    // Apply AI grades to portfolio table
+    if(data.analyzed?.length > 0) {
+      data.analyzed.forEach(s => { AI_GRADES[s.sym] = s; });
+      renderPort();
+      if(data.regime) applyAIGrades({ stocks: data.analyzed, regime: data.regime, summary: {} });
     }
   } catch(err) {
     el.innerHTML = `<div style="color:var(--red)">❌ ${err.message}</div>`;
