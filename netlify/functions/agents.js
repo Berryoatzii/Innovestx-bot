@@ -4,7 +4,7 @@
 const https = require('https');
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL = 'gemini-1.5-flash';
 
 const AGENTS = {
   buffett: {
@@ -73,42 +73,78 @@ const AGENTS = {
   },
 };
 
-async function askGemini(prompt, maxTokens = 600, temperature = 0.7) {
-  if (!GEMINI_KEY) return '⚠️ ไม่พบ GEMINI_API_KEY';
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  const body = JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: maxTokens, temperature },
-  });
-
+// Low-level HTTP call — returns { statusCode, body } or { error }
+function geminiHTTP(bodyStr) {
   return new Promise((resolve) => {
     const opts = {
       hostname: 'generativelanguage.googleapis.com',
       path: '/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + GEMINI_KEY,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr),
+      },
     };
 
     const req = https.request(opts, (res) => {
       let d = '';
       res.on('data', (c) => (d += c));
-      res.on('end', () => {
-        try {
-          const p = JSON.parse(d);
-          if (p.error) { resolve(`⚠️ ${p.error.message}`); return; }
-          const text = p.candidates?.[0]?.content?.parts?.[0]?.text;
-          resolve(text || '⚠️ AI ไม่ตอบ');
-        } catch (e) {
-          resolve('⚠️ Parse error');
-        }
-      });
+      res.on('end', () => resolve({ statusCode: res.statusCode, body: d }));
     });
 
-    req.on('error', () => resolve('⚠️ Network error'));
-    req.setTimeout(9000, () => { req.destroy(); resolve('⚠️ Timeout — AI ยุ่งมาก'); });
-    req.write(body);
+    req.on('error', (err) => resolve({ error: err.message }));
+    req.setTimeout(9000, () => { req.destroy(); resolve({ error: 'timeout' }); });
+    req.write(bodyStr);
     req.end();
   });
+}
+
+// Retry wrapper — 3 attempts, 2s backoff on 429
+async function askGemini(prompt, maxTokens = 600, temperature = 0.7) {
+  if (!GEMINI_KEY) return '⚠️ ไม่พบ GEMINI_API_KEY';
+
+  const bodyStr = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: maxTokens, temperature },
+  });
+
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 2000;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const result = await geminiHTTP(bodyStr);
+
+    if (result.error === 'timeout') {
+      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS); continue; }
+      return '⚠️ Timeout — AI ยุ่งมาก';
+    }
+
+    if (result.error) {
+      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS); continue; }
+      return `⚠️ Network error: ${result.error}`;
+    }
+
+    if (result.statusCode === 429) {
+      console.warn(`[Gemini/agents] 429 rate-limit on attempt ${attempt}`);
+      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS * attempt); continue; }
+      return '⚠️ Gemini quota หมด กรุณาลองใหม่ภายหลัง';
+    }
+
+    try {
+      const p = JSON.parse(result.body);
+      if (p.error) return `⚠️ ${p.error.message}`;
+      const text = p.candidates?.[0]?.content?.parts?.[0]?.text;
+      return text || '⚠️ AI ไม่ตอบ';
+    } catch (e) {
+      return '⚠️ Parse error';
+    }
+  }
+
+  return '⚠️ Max retries exceeded';
 }
 
 // Run a full council meeting on a topic
@@ -134,11 +170,6 @@ ${context ? `\nข้อมูลเพิ่มเติม:\n${context}` : ''}
   }
 
   // Phase 2: Each agent responds to the others (debate round)
-  const initialSummary = transcript
-    .filter((t) => t.phase === 'initial')
-    .map((t) => `${t.emoji} ${t.name}: ${t.text}`)
-    .join('\n\n');
-
   for (const agent of selectedAgents) {
     const otherOpinions = transcript
       .filter((t) => t.phase === 'initial' && t.agent !== agent.id)
@@ -216,10 +247,6 @@ async function marketOutlookMeeting() {
   return runCouncilMeeting(topic, '', ['dalio', 'niwes', 'lynch']);
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 // ── MAIN HANDLER ──
 exports.handler = async (event) => {
   const cors = {
@@ -269,12 +296,24 @@ exports.handler = async (event) => {
       return {
         statusCode: 200,
         headers: cors,
-        body: JSON.stringify({ agents: Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, emoji: a.emoji, color: a.color, role: a.role })) }),
+        body: JSON.stringify({
+          agents: Object.entries(AGENTS).map(([id, a]) => ({
+            id,
+            name: a.name,
+            emoji: a.emoji,
+            color: a.color,
+            role: a.role,
+          })),
+        }),
       };
     }
 
     return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'Unknown action' }) };
   } catch (err) {
-    return { statusCode: 200, headers: cors, body: JSON.stringify({ error: err.message, transcript: [], verdict: '⚠️ เกิดข้อผิดพลาด' }) };
+    return {
+      statusCode: 200,
+      headers: cors,
+      body: JSON.stringify({ error: err.message, transcript: [], verdict: '⚠️ เกิดข้อผิดพลาด' }),
+    };
   }
 };
