@@ -100,10 +100,60 @@ exports.handler = async (event, context) => {
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'cancelled', data: res }) };
     }
 
+    // ── STOCK QUOTE (Settrade) ──
+    if (action === 'quote') {
+      const sym = (event.queryStringParameters?.sym || '').toUpperCase().trim();
+      if (!sym) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Missing sym' }) };
+      try {
+        const raw = await httpGet(`https://api.settrade.com/api/quotes/stocks?symbol=${sym}`);
+        const parsed = JSON.parse(raw);
+        const s = (parsed.stocks || [])[0] || {};
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({
+          sym,
+          last:   Number(s.last   || s.Last   || 0),
+          high:   Number(s.high   || s.High   || s.dailyHigh  || 0),
+          low:    Number(s.low    || s.Low    || s.dailyLow   || 0),
+          bid:    Number(s.bid    || s.Bid    || s.bestBid    || 0),
+          ask:    Number(s.ask    || s.Ask    || s.offer      || s.bestOffer || 0),
+          prior:  Number(s.prior  || 0),
+          change: Number(s.change || s.priceChange || 0),
+          pct:    Number(s.percentChange || s.changePct || 0),
+          volume: Number(s.volume || s.totalVolume || 0),
+        }) };
+      } catch(e) {
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ sym, last: 0, error: 'unavailable' }) };
+      }
+    }
+
     // ── PLACE ORDER ──
     if (event.httpMethod === 'POST' && action === 'order') {
-      const res = await invxPost(INVX_BASE + apiKey, apiKey, apiSecret, body);
-      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify(res) };
+      // Normalize and sanitize order body — only send fields InnovestX expects
+      const rawSide = (body.side || 'Sell').toLowerCase();
+      const normSide = rawSide.startsWith('b') ? 'Buy' : 'Sell';
+      const orderBody = {
+        ticker:     body.ticker || body.symbol || '',
+        side:       normSide,
+        quantity:   Number(body.quantity || body.qty || 0),
+        order_type: body.order_type || 'MP-MTL',
+      };
+      if (body.pin)                        orderBody.pin   = body.pin;
+      if (body.price && Number(body.price) > 0) orderBody.price = Number(body.price);
+
+      const res = await invxPost(INVX_BASE + apiKey, apiKey, apiSecret, orderBody);
+
+      // Detect InnovestX success vs failure from response body
+      const isSuccess =
+        !!(res?.orderId || res?.order_id || res?.orderNo ||
+           res?.data?.orderId || res?.data?.order_id ||
+           res?.status === 'success' || res?.success === true);
+      const invxErr = res?.message || res?.error || res?.detail || '';
+      const statusCode = isSuccess ? 200 : 400;
+
+      return { statusCode, headers: corsHeaders, body: JSON.stringify({
+        ...res,
+        _success:  isSuccess,
+        _error_msg: isSuccess ? '' : (invxErr || 'InnovestX ไม่ยืนยัน Order'),
+      }) };
     }
 
     return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Unknown action: ' + action }) };

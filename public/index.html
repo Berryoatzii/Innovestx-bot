@@ -552,9 +552,36 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 
 <!-- ORDER MODAL -->
 <div class="modal-bg" id="orderModal">
-  <div class="modal">
+  <div class="modal" style="width:min(520px,96vw)">
     <div class="modal-t" id="modalTitle">ยืนยันคำสั่ง</div>
+
+    <!-- Quote bar -->
+    <div id="modalQuote" style="background:rgba(0,0,0,.4);border:1px solid rgba(255,193,7,.15);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-family:'Share Tech Mono',monospace;font-size:12px;line-height:2">
+      <span style="color:var(--dim)">⏳ กำลังดึงราคา...</span>
+    </div>
+
+    <!-- Order detail (sym / side / P&L) -->
     <div class="od" id="orderDetail"></div>
+
+    <!-- Editable qty + price -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:5px">จำนวนหุ้น (Volume)</div>
+        <input id="orderQtyInp" type="number" min="1" step="100"
+          style="width:100%;background:rgba(3,5,8,.9);border:1px solid rgba(255,193,7,.35);border-radius:6px;padding:8px 12px;color:#d0daf0;font-family:'Share Tech Mono',monospace;font-size:16px;outline:none;font-weight:bold"/>
+      </div>
+      <div>
+        <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:5px">ราคา (0 = Market Order)</div>
+        <input id="orderPriceInp" type="number" min="0" step="0.01"
+          style="width:100%;background:rgba(3,5,8,.9);border:1px solid rgba(255,193,7,.35);border-radius:6px;padding:8px 12px;color:#d0daf0;font-family:'Share Tech Mono',monospace;font-size:16px;outline:none;font-weight:bold"
+          oninput="updateOrderSummary()"/>
+      </div>
+    </div>
+    <div id="orderSummaryLine" style="font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--dim);margin-bottom:4px;text-align:center"></div>
+    <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:12px;text-align:center">
+      📋 Order Type: <strong style="color:var(--accent)">MP-MTL</strong> (Market Order — ราคาตลาดปิด)
+    </div>
+
     <div class="mw" id="modalWarn"></div>
     <div class="mb2">
       <button class="btn-confirm" id="confirmBtn" onclick="executeOrder()">✓ ยืนยันส่งคำสั่ง</button>
@@ -1088,44 +1115,148 @@ function renderTxLog(){
 let pendingOrder=null;
 window._apiKey=''; window._apiSecret=''; window._apiConnected=false;
 
-function prepOrder(sym,side,qty,price){
-  const p=PORTFOLIO.find(x=>x.sym===sym);
-  const pnlPct=p?((p.mkt-p.avg)/p.avg*100).toFixed(1):'0';
-  pendingOrder={sym,side,qty,price:price.toFixed(2)};
-  const st=side==='SELL'?'ขาย':'ซื้อ',sc=side==='SELL'?'var(--red)':'var(--green)';
-  document.getElementById('modalTitle').textContent=st+' '+sym;
-  document.getElementById('orderDetail').innerHTML=
-    '<div>หุ้น: <strong style="color:var(--gold);font-size:18px">'+sym+'</strong></div>'
-    +'<div>ทิศทาง: <strong style="color:'+sc+'">'+st+'</strong></div>'
-    +'<div>จำนวน: '+qty.toLocaleString()+' หุ้น</div>'
-    +'<div>ราคา: ฿'+price.toFixed(2)+' / หุ้น</div>'
-    +'<div>มูลค่ารวม: <strong>'+fmtB(qty*price)+'</strong></div>'
-    +(p&&side==='SELL'?'<div style="margin-top:10px">P&L ปัจจุบัน: <span style="font-weight:bold;color:'+(parseFloat(pnlPct)>=0?'var(--green)':'var(--red)')+'">'+pnlPct+'%</span></div>':'');
-  document.getElementById('modalWarn').textContent=side==='SELL'&&p&&p.mkt<p.avg?'⚠ ราคาต่ำกว่าต้นทุน ขาดทุน '+pnlPct+'% — ยืนยันจะ Lock ขาดทุนจริง':'ตรวจสอบก่อนยืนยัน — คำสั่งนี้จะส่งไป InnovestX จริง';
+async function prepOrder(sym, side, qty, price) {
+  const p = PORTFOLIO.find(x => x.sym === sym);
+  const pnlPct = p && p.avg > 0 ? ((p.mkt - p.avg) / p.avg * 100).toFixed(1) : '0';
+  pendingOrder = { sym, side, qty, price: price.toFixed(2) };
+
+  const st = side === 'SELL' ? 'ขาย' : 'ซื้อ';
+  const sc = side === 'SELL' ? 'var(--red)' : 'var(--green)';
+  document.getElementById('modalTitle').textContent = st + ' ' + sym;
+
+  // Populate editable fields with current values
+  document.getElementById('orderQtyInp').value   = qty;
+  document.getElementById('orderPriceInp').value = price.toFixed(2);
+
+  // Detail block
+  const costLine = p ? '<div>ต้นทุนเฉลี่ย: <strong style="color:var(--dim)">฿'+fmt(p.avg)+'</strong></div>' : '';
+  const pnlColor = parseFloat(pnlPct) >= 0 ? 'var(--green)' : 'var(--red)';
+  const pnlLine  = p && side === 'SELL'
+    ? '<div>P&L ปัจจุบัน: <strong style="color:'+pnlColor+'">'+pnlPct+'%</strong> ('+fmtB((p.mkt-p.avg)*p.qty)+')</div>'
+    : '';
+  document.getElementById('orderDetail').innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+    + '<span>หุ้น: <strong style="color:var(--gold);font-size:20px">'+sym+'</strong></span>'
+    + '<span style="color:'+sc+';font-family:\'Share Tech Mono\',monospace;font-size:16px;font-weight:bold">'+st+'</span>'
+    + '</div>'
+    + costLine + pnlLine;
+
+  // Warn text
+  const warnEl = document.getElementById('modalWarn');
+  if (side === 'SELL' && p && p.mkt < p.avg) {
+    warnEl.textContent = '⚠ ราคาต่ำกว่าต้นทุน — ขาดทุน ' + pnlPct + '% จะถูก Realize จริง';
+    warnEl.style.color = 'var(--red)';
+  } else {
+    warnEl.textContent = '⚠ คำสั่งนี้จะถูกส่งไป InnovestX โดยตรง — ตรวจสอบก่อนยืนยัน';
+    warnEl.style.color = 'var(--yellow)';
+  }
+
+  updateOrderSummary();
   document.getElementById('orderModal').classList.add('open');
+
+  // Fetch live quote in background
+  document.getElementById('modalQuote').innerHTML = '<span style="color:var(--dim);font-size:12px">⏳ กำลังดึงราคา '+sym+'...</span>';
+  try {
+    const qr = await originalFetch('/api/invx?action=quote&sym=' + encodeURIComponent(sym));
+    if (qr.ok) {
+      const q = await qr.json();
+      if (!q.error && q.last > 0) {
+        const chgColor = q.change >= 0 ? 'var(--green)' : 'var(--red)';
+        const chgSign  = q.change >= 0 ? '+' : '';
+        document.getElementById('modalQuote').innerHTML =
+          '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">'
+          + '<span><span style="color:var(--dim)">Last</span> <strong style="color:var(--gold);font-size:15px">'+q.last.toFixed(2)+'</strong>'
+          + ' <span style="color:'+chgColor+'">'+chgSign+q.change.toFixed(2)+'('+chgSign+q.pct.toFixed(2)+'%)</span></span>'
+          + (q.high  ? '<span><span style="color:var(--dim)">High</span> <strong style="color:var(--green)">'+q.high.toFixed(2)+'</strong></span>' : '')
+          + (q.low   ? '<span><span style="color:var(--dim)">Low</span> <strong style="color:var(--red)">'+q.low.toFixed(2)+'</strong></span>' : '')
+          + (q.bid   ? '<span><span style="color:var(--dim)">Bid</span> <strong>'+q.bid.toFixed(2)+'</strong></span>' : '')
+          + (q.ask   ? '<span><span style="color:var(--dim)">Ask</span> <strong>'+q.ask.toFixed(2)+'</strong></span>' : '')
+          + (q.prior ? '<span><span style="color:var(--dim)">Prior</span> '+q.prior.toFixed(2)+'</span>' : '')
+          + '</div>';
+        // Auto-fill with last price if user hasn't changed it yet
+        const priceInp = document.getElementById('orderPriceInp');
+        if (parseFloat(priceInp.value) === price) {
+          priceInp.value = q.last.toFixed(2);
+          pendingOrder.price = q.last.toFixed(2);
+          updateOrderSummary();
+        }
+      } else {
+        document.getElementById('modalQuote').innerHTML = '<span style="color:var(--dim)">ราคาตลาด: ไม่พบข้อมูล Settrade</span>';
+      }
+    }
+  } catch(e) {
+    document.getElementById('modalQuote').innerHTML = '<span style="color:var(--dim)">ราคาตลาด: offline</span>';
+  }
+}
+
+function updateOrderSummary() {
+  const qty   = parseInt(document.getElementById('orderQtyInp')?.value)   || 0;
+  const price = parseFloat(document.getElementById('orderPriceInp')?.value) || 0;
+  const el    = document.getElementById('orderSummaryLine');
+  if (!el) return;
+  const val  = qty * price;
+  const type = price <= 0 ? 'Market Order' : 'Limit ฿'+price.toFixed(2);
+  el.textContent = qty > 0
+    ? '📊 ' + qty.toLocaleString() + ' หุ้น × ฿' + (price > 0 ? price.toFixed(2) : '(ราคาตลาด)') + ' = ' + fmtB(val) + '  [' + type + ']'
+    : '';
 }
 
 async function executeOrder(){
-  if(!pendingOrder)return;
-  const o=pendingOrder;
-  document.getElementById('confirmBtn').disabled=true;
-  document.getElementById('confirmBtn').textContent='กำลังส่ง...';
-  if(!window._apiConnected){showToast('ใส่ InnovestX Key ก่อน','warn');closeModal();return;}
+  if(!pendingOrder) return;
+
+  // Read possibly-edited qty and price from modal inputs
+  const editedQty   = parseInt(document.getElementById('orderQtyInp')?.value)    || pendingOrder.qty;
+  const editedPrice = parseFloat(document.getElementById('orderPriceInp')?.value) || 0;
+  const o = { ...pendingOrder, qty: editedQty, price: editedPrice.toFixed(2) };
+
+  const confirmBtn = document.getElementById('confirmBtn');
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = '⏳ กำลังส่ง...';
+
+  if(!window._apiConnected){
+    showToast('กด CONNECT เพื่อเชื่อมต่อก่อน','warn');
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '✓ ยืนยันส่งคำสั่ง';
+    closeModal();
+    return;
+  }
   try{
-    const body={ticker:o.sym,side:o.side,quantity:o.qty,order_type:'MP-MTL',
-      comment:'EarthhEvans '+o.side+' '+o.sym+' '+o.qty+'@'+o.price,api_secret:window._apiSecret};
-    const res=await originalFetch('/api/invx?action=order',{method:'POST',headers:{'Content-Type':'application/json','api-key':window._apiKey,'api-secret':window._apiSecret},body:JSON.stringify(body)});
-    const data=await res.json();
-    if(res.ok){
-      addLog('ok','✅ Order: '+o.side+' '+o.sym+' '+o.qty+'หุ้น @'+o.price);
-      addTransaction(o.sym,o.side,o.qty,parseFloat(o.price));
-      showToast(o.side==='SELL'?'ขาย '+o.sym+' สำเร็จ':'ซื้อ '+o.sym+' สำเร็จ','ok');
-      if(o.side==='SELL'){const idx=PORTFOLIO.findIndex(p=>p.sym===o.sym);if(idx>=0){PORTFOLIO[idx].qty-=o.qty;if(PORTFOLIO[idx].qty<=0)PORTFOLIO.splice(idx,1);}}
+    const body = {
+      ticker:     o.sym,
+      side:       o.side,   // invx.js will normalize to 'Buy'/'Sell'
+      quantity:   o.qty,
+      order_type: 'MP-MTL',
+      price:      editedPrice > 0 ? editedPrice : 0,
+    };
+    const res  = await originalFetch('/api/invx?action=order', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'api-key': window._apiKey||'', 'api-secret': window._apiSecret||'' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+
+    // invx.js returns 200 for success, 400 for InnovestX rejection
+    if(res.ok && data._success !== false){
+      const orderId = data.orderId || data.order_id || data.orderNo || data.data?.orderId || '—';
+      addLog('ok', '✅ '+o.side+' '+o.sym+' '+o.qty.toLocaleString()+'หุ้น @฿'+o.price+' | OrderID: '+orderId);
+      addTransaction(o.sym, o.side, o.qty, parseFloat(o.price)||0);
+      showToast((o.side==='SELL'?'ขาย ':'ซื้อ ')+o.sym+' '+o.qty.toLocaleString()+'หุ้น — ส่งสำเร็จ!', 'ok');
+      if(o.side==='SELL'){
+        const idx = PORTFOLIO.findIndex(p => p.sym === o.sym);
+        if(idx >= 0){ PORTFOLIO[idx].qty -= o.qty; if(PORTFOLIO[idx].qty <= 0) PORTFOLIO.splice(idx,1); }
+      }
       renderPort();
-    }else{addLog('err','Order failed: '+(data.message||res.status));showToast('Order ไม่สำเร็จ: '+(data.message||'error'),'err');}
-  }catch(err){addLog('err','Error: '+err.message);showToast(err.message,'err');}
-  document.getElementById('confirmBtn').disabled=false;
-  document.getElementById('confirmBtn').textContent='✓ ยืนยันส่งคำสั่ง';
+    } else {
+      const errMsg = data._error_msg || data.message || data.error || JSON.stringify(data).slice(0,120);
+      addLog('err', '❌ Order ไม่สำเร็จ: '+errMsg);
+      showToast('InnovestX ปฏิเสธ Order: '+errMsg, 'err');
+    }
+  }catch(err){
+    addLog('err','Network error: '+err.message);
+    showToast('Network error: '+err.message,'err');
+  }
+  confirmBtn.disabled = false;
+  confirmBtn.textContent = '✓ ยืนยันส่งคำสั่ง';
   closeModal();
 }
 function closeModal(){document.getElementById('orderModal').classList.remove('open');pendingOrder=null;}
