@@ -307,7 +307,7 @@ async function runAutoTrader(mode, portfolioOverride = null) {
 
   // 2. Run 7-Layer AI analysis
   let aiResult = null;
-  if (GEMINI_KEY) {
+  if (GROQ_KEY || GEMINI_KEY) {
     aiResult = await runAIAnalysis(portfolio.slice(0, 20)); // Limit to 20 stocks to stay within timeout
   }
 

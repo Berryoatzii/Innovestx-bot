@@ -1863,11 +1863,17 @@ setTimeout(()=>{ if(GAME.level > 1) addLog('ok','ยินดีต้อนร�
 //  AUTO TRADER UI
 // ══════════════════════════════════════════════════════════
 const AT_ACTION_LABELS = {
-  SELL_CUT_LOSS:     { icon:'🔴', label:'CUT LOSS',       color:'var(--red)' },
-  SELL_DEEP_CUT:     { icon:'🟠', label:'DEEP CUT',       color:'#ff9100' },
-  TAKE_PROFIT_ALERT: { icon:'🟢', label:'TAKE PROFIT ✓',  color:'var(--green)' },
-  DCA_SIGNAL:        { icon:'🔵', label:'DCA SIGNAL',     color:'var(--accent)' },
-  HOLD:              { icon:'⚪', label:'HOLD',            color:'var(--dim)' },
+  STRONG_SELL: { icon:'🔴', label:'STRONG SELL — ออกทันที',  color:'var(--red)' },
+  SELL:        { icon:'🟠', label:'SELL — ควรขาย',            color:'#ff9100' },
+  WATCHLIST:   { icon:'🟡', label:'WATCHLIST — จับตาดู',      color:'var(--yellow)' },
+  HOLD:        { icon:'⚪', label:'HOLD — ถือต่อ',            color:'var(--dim)' },
+  BUY:         { icon:'🟢', label:'BUY SIGNAL',               color:'var(--green)' },
+  STRONG_BUY:  { icon:'💚', label:'STRONG BUY',               color:'var(--green)' },
+  // legacy fallbacks
+  SELL_CUT_LOSS:     { icon:'🔴', label:'CUT LOSS',           color:'var(--red)' },
+  SELL_DEEP_CUT:     { icon:'🟠', label:'DEEP CUT',           color:'#ff9100' },
+  TAKE_PROFIT_ALERT: { icon:'🟢', label:'TAKE PROFIT ✓',      color:'var(--green)' },
+  DCA_SIGNAL:        { icon:'🔵', label:'DCA SIGNAL',         color:'var(--accent)' },
 };
 
 function setAtStatus(state, msg) {
@@ -1957,29 +1963,46 @@ function renderAtResult(data, mode) {
   html += '<div style="margin-bottom:12px">';
   html += '<div style="font-family:monospace;font-size:11px;color:var(--gold);margin-bottom:8px;font-weight:bold">📊 ผลวิเคราะห์ทุกหุ้น</div>';
 
-  // Group by action
+  // Group by action — matches AI output: STRONG_SELL, SELL, WATCHLIST, HOLD, BUY, STRONG_BUY
   const groups = {};
   analyzed.forEach(s => {
-    if(!groups[s.action]) groups[s.action] = [];
-    groups[s.action].push(s);
+    const act = s.action || 'HOLD';
+    if(!groups[act]) groups[act] = [];
+    groups[act].push(s);
   });
 
-  const ORDER = ['SELL_CUT_LOSS','SELL_DEEP_CUT','TAKE_PROFIT_ALERT','DCA_SIGNAL','HOLD'];
+  const ORDER = ['STRONG_SELL','SELL','WATCHLIST','HOLD','BUY','STRONG_BUY'];
   ORDER.forEach(act => {
     const group = groups[act];
     if(!group || group.length === 0) return;
-    const meta = AT_ACTION_LABELS[act] || {icon:'•',label:act,color:'var(--dim)'};
-    html += `<div style="margin-bottom:8px">`;
-    html += `<div style="color:${meta.color};font-family:monospace;font-size:11px;font-weight:bold;margin-bottom:4px">${meta.icon} ${meta.label} (${group.length})</div>`;
+    const meta = AT_ACTION_LABELS[act] || {icon:'•', label:act, color:'var(--dim)'};
+    html += `<div style="margin-bottom:10px">`;
+    html += `<div style="color:${meta.color};font-family:monospace;font-size:11px;font-weight:bold;margin-bottom:5px;border-bottom:1px solid rgba(255,255,255,.06);padding-bottom:3px">${meta.icon} ${meta.label} (${group.length})</div>`;
     group.forEach(s => {
       const sign = s.pnlPct >= 0 ? '+' : '';
-      html += `<div style="display:flex;justify-content:space-between;padding:3px 8px;background:rgba(255,255,255,.03);border-radius:4px;margin-bottom:2px;font-size:13px">`;
-      html += `<span style="color:var(--gold);font-family:monospace;font-weight:bold">${s.sym}</span>`;
-      html += `<span style="color:${s.pnlPct>=0?'var(--green)':'var(--red)'}">${sign}${s.pnlPct}%</span>`;
-      html += `<span style="color:var(--dim);font-size:11px">${s.qty} หุ้น @ ${s.mkt}</span>`;
+      const pnlColor = s.pnlPct >= 0 ? 'var(--green)' : 'var(--red)';
+      const gradeColor = s.grade === 'A' ? 'var(--green)' : s.grade === 'B' ? 'var(--accent)' : 'var(--red)';
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:rgba(255,255,255,.03);border-radius:4px;margin-bottom:3px;font-size:12px">`;
+      html += `<span style="color:var(--gold);font-family:monospace;font-weight:bold;min-width:52px">${s.sym}</span>`;
+      html += `<span style="color:${gradeColor};font-family:monospace;font-size:11px">Grade:${s.grade||'?'}</span>`;
+      html += `<span style="color:${pnlColor};font-weight:bold">${sign}${s.pnlPct}%</span>`;
+      html += `<span style="color:var(--dim);font-size:11px">${s.qty}หุ้น</span>`;
+      if(s.reason_th) html += `<span style="color:var(--dim);font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${s.reason_th}">${s.reason_th}</span>`;
       html += `</div>`;
     });
     html += `</div>`;
+  });
+  // Show any action not in ORDER (safety net)
+  Object.keys(groups).filter(a => !ORDER.includes(a)).forEach(act => {
+    const group = groups[act];
+    const meta = AT_ACTION_LABELS[act] || {icon:'•', label:act, color:'var(--dim)'};
+    group.forEach(s => {
+      html += `<div style="display:flex;justify-content:space-between;padding:4px 8px;font-size:12px">`;
+      html += `<span style="color:var(--gold);font-family:monospace;font-weight:bold">${s.sym}</span>`;
+      html += `<span style="color:${meta.color}">${meta.icon} ${act}</span>`;
+      html += `<span style="color:${s.pnlPct>=0?'var(--green)':'var(--red)'}">${s.pnlPct>=0?'+':''}${s.pnlPct}%</span>`;
+      html += `</div>`;
+    });
   });
   html += '</div>';
 
