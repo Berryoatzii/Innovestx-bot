@@ -2,7 +2,8 @@
 // Bulletproof AI Engine — gemini-2.0-flash with 429 retry logic
 
 const https = require('https');
-const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_KEY  = process.env.GEMINI_API_KEY || '';
+const GROQ_KEY    = process.env.GROQ_API_KEY   || '';
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
 // Retry wrapper — up to 3 attempts, 2s backoff on 429
@@ -63,29 +64,66 @@ async function geminiRaw(body) {
   return { error: 'max_retries' };
 }
 
-async function gemini(systemPrompt, userMessage) {
-  if (!GEMINI_KEY) return '⚠️ [System]: ไม่พบ GEMINI_API_KEY';
-
-  const prompt = systemPrompt ? systemPrompt + '\n\n---\n\n' + userMessage : userMessage;
+// Groq fallback (free, OpenAI-compatible)
+async function groqFallback(prompt, maxTokens = 1200) {
+  if (!GROQ_KEY) return null;
   const bodyStr = JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: 1200, temperature: 0.5 },
+    model: 'llama-3.3-70b-versatile',
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: maxTokens,
+    temperature: 0.5,
   });
+  return new Promise((resolve) => {
+    const opts = {
+      hostname: 'api.groq.com',
+      path: '/openai/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + GROQ_KEY,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr),
+      },
+    };
+    const req = https.request(opts, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(d).choices?.[0]?.message?.content || null); }
+        catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(10000, () => { req.destroy(); resolve(null); });
+    req.write(bodyStr); req.end();
+  });
+}
 
-  const result = await geminiRaw(bodyStr);
+async function gemini(systemPrompt, userMessage) {
+  const prompt = systemPrompt ? systemPrompt + '\n\n---\n\n' + userMessage : userMessage;
 
-  if (result.error === 'timeout') return '⚠️ [Timeout]: เซิร์ฟเวอร์ AI หนาแน่น กรุณากดถามใหม่ครับ';
-  if (result.error === 'quota_exceeded') return '⚠️ [Quota]: Gemini API quota หมด กรุณาลองใหม่ภายหลัง';
-  if (result.error) return `⚠️ [Network Error]: ${result.error}`;
+  if (GEMINI_KEY) {
+    const bodyStr = JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 1200, temperature: 0.5 },
+    });
 
-  try {
-    const p = JSON.parse(result.body);
-    if (p.error) return `⚠️ [AI Engine]: ${p.error.message}`;
-    const text = p.candidates?.[0]?.content?.parts?.[0]?.text;
-    return text || '⚠️ [AI]: ประมวลผลคำตอบไม่ได้';
-  } catch (e) {
-    return '⚠️ [Server Error]: AI ตอบกลับผิดรูปแบบ';
+    const result = await geminiRaw(bodyStr);
+
+    if (result.error !== 'quota_exceeded' && result.error !== 'timeout' && !result.error) {
+      try {
+        const p = JSON.parse(result.body);
+        if (!p.error) {
+          const text = p.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (text) return text;
+        }
+      } catch {}
+    }
   }
+
+  // Groq fallback
+  const groqText = await groqFallback(prompt, 1200);
+  if (groqText) return groqText;
+
+  return '⚠️ [AI]: ทั้ง Gemini และ Groq ไม่พร้อมใช้งาน กรุณาตรวจสอบ API Keys';
 }
 
 const EXPERT_SYSTEMS = {

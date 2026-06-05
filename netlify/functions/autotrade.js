@@ -9,6 +9,7 @@ const INVX_KEY    = process.env.INVX_KEY        || '';
 const INVX_SECRET = process.env.INVX_SECRET     || '';
 const INVX_PIN    = process.env.INVX_PIN        || '';
 const GEMINI_KEY  = process.env.GEMINI_API_KEY  || '';
+const GROQ_KEY    = process.env.GROQ_API_KEY    || '';
 const TG_TOKEN    = process.env.TELEGRAM_TOKEN  || '';
 const TG_CHAT_ID  = process.env.TELEGRAM_CHAT_ID || '';
 const TRADE_MODE  = process.env.TRADE_MODE      || 'execute';
@@ -22,6 +23,43 @@ const DEEP_LOSS_PCT        = -70;    // Also sell regardless of score if P/L ≤
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// Groq AI fallback (free tier: 14,400 req/day, OpenAI-compatible)
+function groqRequest(prompt, maxTokens = 2000) {
+  if (!GROQ_KEY) return Promise.resolve(null);
+  const bodyStr = JSON.stringify({
+    model: 'llama-3.3-70b-versatile',
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: maxTokens,
+    temperature: 0.2,
+    response_format: { type: 'json_object' },
+  });
+  return new Promise((resolve) => {
+    const opts = {
+      hostname: 'api.groq.com',
+      path: '/openai/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + GROQ_KEY,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr),
+      },
+    };
+    const req = https.request(opts, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => {
+        try {
+          const p = JSON.parse(d);
+          resolve(p.choices?.[0]?.message?.content || null);
+        } catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(15000, () => { req.destroy(); resolve(null); });
+    req.write(bodyStr);
+    req.end();
+  });
+}
 
 function httpsRequest(opts, postBody) {
   return new Promise((resolve) => {
@@ -165,30 +203,50 @@ D = เก็งกำไร → จำกัด 1-2% ของพอร์ต
 
 ตอบ JSON เท่านั้น`;
 
-  const analysisBodyStr = JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: 2000, temperature: 0.2 },
-  });
+  // Try Gemini first
+  if (GEMINI_KEY) {
+    const analysisBodyStr = JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 2000, temperature: 0.2 },
+    });
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const analysisOpts = {
-      hostname: 'generativelanguage.googleapis.com',
-      path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(analysisBodyStr) },
-    };
-    const r = await httpsRequest(analysisOpts, analysisBodyStr);
-    if (r.statusCode === 429) { await sleep(3000 * attempt); continue; }
-    if (r.error) { await sleep(2000); continue; }
-    try {
-      const p = JSON.parse(r.body);
-      const text = p.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const clean = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
-      const parsed = JSON.parse(clean);
-      if (parsed.regime && Array.isArray(parsed.stocks)) return parsed;
-    } catch {}
-    await sleep(1000);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const analysisOpts = {
+        hostname: 'generativelanguage.googleapis.com',
+        path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(analysisBodyStr) },
+      };
+      const r = await httpsRequest(analysisOpts, analysisBodyStr);
+      if (r.statusCode === 429) { await sleep(4000 * attempt); continue; }
+      if (r.error) { await sleep(2000); continue; }
+      try {
+        const p = JSON.parse(r.body);
+        const text = p.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const clean = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(clean);
+        if (parsed.regime && Array.isArray(parsed.stocks)) return parsed;
+      } catch {}
+      await sleep(1000);
+    }
+    console.warn('[AutoTrader] Gemini failed — trying Groq fallback');
   }
+
+  // Groq fallback (free, 14k req/day)
+  if (GROQ_KEY) {
+    try {
+      const text = await groqRequest(prompt, 2000);
+      if (text) {
+        const clean = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(clean);
+        if (parsed.regime && Array.isArray(parsed.stocks)) {
+          console.log('[AutoTrader] Groq fallback succeeded');
+          return parsed;
+        }
+      }
+    } catch (e) { console.warn('[AutoTrader] Groq fallback error:', e.message); }
+  }
+
   return null;
 }
 
@@ -207,26 +265,43 @@ async function sendTelegram(text) {
 }
 
 // ── CORE TRADER LOGIC ─────────────────────────────────────────────────────────
-async function runAutoTrader(mode) {
+// portfolioOverride: pre-loaded from dashboard to avoid double InnovestX fetch
+async function runAutoTrader(mode, portfolioOverride = null) {
   const result = {
     mode, orders_placed: [], orders_failed: [],
     analyzed: [], alerts: [], regime: null,
     summary: '', timestamp: new Date().toISOString(),
   };
 
-  // 1. Fetch portfolio
-  let portfolioRaw;
-  try { portfolioRaw = await fetchPortfolio(); }
-  catch (err) {
-    const msg = `Portfolio fetch failed: ${err.message}`;
-    console.error(msg);
-    if (mode !== 'dry_run') await sendTelegram(`<b>Auto Trader Error</b>\n${msg}`);
-    result.summary = msg;
-    return result;
+  // 1. Get portfolio — use pre-loaded from dashboard OR fetch from InnovestX
+  let portfolio = [];
+  let cashBalance = 0;
+
+  if (portfolioOverride && portfolioOverride.length > 0) {
+    // Frontend sent its already-loaded portfolio — normalize field names
+    portfolio = portfolioOverride.map(p => {
+      const avg = Number(p.avg || p.avgCost || p.avg_cost || 0);
+      const mkt = Number(p.mkt || p.lastPrice || p.last || avg);
+      const qty = Number(p.qty || p.volume || p.quantity || 0);
+      const pnlPct = avg > 0 ? ((mkt - avg) / avg) * 100 : 0;
+      return { sym: p.sym || p.symbol || '', qty, avg, mkt, pnlPct, unrealizedPnl: (mkt - avg) * qty };
+    }).filter(p => p.sym && p.qty > 0);
+    console.log(`[AutoTrader] Using client portfolio: ${portfolio.length} stocks`);
+  } else {
+    // Fall back to server-side fetch
+    try {
+      const portfolioRaw = await fetchPortfolio();
+      portfolio = normalizePortfolio(portfolioRaw);
+      cashBalance = extractCash(portfolioRaw);
+    } catch (err) {
+      const msg = `Portfolio fetch failed: ${err.message}`;
+      console.error(msg);
+      if (mode !== 'dry_run') await sendTelegram(`<b>Auto Trader Error</b>\n${msg}`);
+      result.summary = msg;
+      return result;
+    }
   }
 
-  const portfolio = normalizePortfolio(portfolioRaw);
-  const cashBalance = extractCash(portfolioRaw);
   console.log(`[AutoTrader] mode=${mode} stocks=${portfolio.length} cash=${cashBalance}`);
 
   if (portfolio.length === 0) {

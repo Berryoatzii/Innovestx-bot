@@ -52,16 +52,21 @@ exports.handler = async (event) => {
     }
   }
 
-  // ── Parse mode ───────────────────────────────────────────────────────────────
-  // Query param takes priority; POST body falls back; default is "analyze"
+  // ── Parse mode + optional pre-loaded portfolio ───────────────────────────────
   let mode = event.queryStringParameters?.mode || '';
+  let clientPortfolio = null;
 
-  if (!mode && event.body) {
+  if (event.body) {
     try {
       const body = JSON.parse(event.body);
-      mode = body.mode || '';
+      if (!mode) mode = body.mode || '';
+      // Accept pre-loaded portfolio from dashboard — avoids double InnovestX fetch
+      if (Array.isArray(body.portfolio) && body.portfolio.length > 0) {
+        clientPortfolio = body.portfolio;
+        console.log(`[autotrader-trigger] Using client portfolio: ${clientPortfolio.length} stocks`);
+      }
     } catch (e) {
-      // ignore parse errors — mode stays empty
+      // ignore parse errors
     }
   }
 
@@ -70,26 +75,11 @@ exports.handler = async (event) => {
     mode = 'analyze'; // safe default
   }
 
-  console.log(`[autotrader-trigger] Manual run triggered | mode=${mode}`);
-
-  // ── Validate required env vars ────────────────────────────────────────────────
-  const INVX_KEY    = process.env.INVX_KEY    || '';
-  const INVX_SECRET = process.env.INVX_SECRET || '';
-
-  if (!INVX_KEY || !INVX_SECRET) {
-    return jsonResponse(500, {
-      error: 'Server configuration error: INVX_KEY or INVX_SECRET is not set.',
-      orders_placed: [],
-      orders_failed: [],
-      analyzed: [],
-      alerts: [],
-      summary: '',
-    });
-  }
+  console.log(`[autotrader-trigger] mode=${mode} clientPortfolio=${clientPortfolio?.length ?? 'none'}`);
 
   // ── Run the trader ────────────────────────────────────────────────────────────
   try {
-    const result = await runAutoTrader(mode);
+    const result = await runAutoTrader(mode, clientPortfolio);
 
     return jsonResponse(200, {
       ok: true,

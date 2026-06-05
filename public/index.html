@@ -1682,7 +1682,8 @@ async function triggerAutoTrader(mode) {
   try {
     const res = await originalFetch('/api/autotrader-trigger?mode=' + mode, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ portfolio: PORTFOLIO.length > 0 ? PORTFOLIO : undefined })
     });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();

@@ -36,66 +36,72 @@ async function tgPost(method, data) {
   });
 }
 
-// ── Gemini AI (gemini-2.0-flash with 429 retry) ──
+// ── AI (Gemini primary → Groq fallback) ──
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 async function askClaude(system, message) {
-  const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
+  const GEMINI_KEY  = process.env.GEMINI_API_KEY || '';
+  const GROQ_KEY    = process.env.GROQ_API_KEY   || '';
   const GEMINI_MODEL = 'gemini-2.0-flash';
-  if (!GEMINI_KEY) return '⚠️ ไม่พบ GEMINI_API_KEY';
-
   const prompt = system ? system + '\n\n---\n\n' + message : message;
-  const postData = JSON.stringify({
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: 1000, temperature: 0.7 }
-  });
 
-  const MAX_RETRIES = 3;
-  const RETRY_DELAY_MS = 2000;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    const result = await new Promise((resolve) => {
-      const opts = {
-        hostname: 'generativelanguage.googleapis.com',
-        path: '/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + GEMINI_KEY,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-      };
-      const req = https.request(opts, res => {
-        let d = '';
-        res.on('data', c => d += c);
-        res.on('end', () => resolve({ statusCode: res.statusCode, body: d }));
-      });
-      req.on('error', (err) => resolve({ statusCode: 0, body: '', error: err.message }));
-      req.setTimeout(9000, () => { req.destroy(); resolve({ statusCode: 0, body: '', error: 'timeout' }); });
-      req.write(postData);
-      req.end();
+  // Try Gemini first
+  if (GEMINI_KEY) {
+    const postData = JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 1000, temperature: 0.7 }
     });
-
-    if (result.error === 'timeout') {
-      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS); continue; }
-      return '⚠️ Timeout — AI ยุ่งมาก';
-    }
-    if (result.error) {
-      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS); continue; }
-      return `⚠️ Network error: ${result.error}`;
-    }
-    if (result.statusCode === 429) {
-      console.warn(`[Gemini/telegram] 429 rate-limit on attempt ${attempt}`);
-      if (attempt < MAX_RETRIES) { await sleep(RETRY_DELAY_MS * attempt); continue; }
-      return '⚠️ Gemini quota หมด กรุณาลองใหม่ภายหลัง';
-    }
-
-    try {
-      const p = JSON.parse(result.body);
-      const text = p.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (text) return text;
-      return '⚠️ ' + (p.error?.message || 'Gemini: ไม่ได้รับคำตอบ');
-    } catch(e) {
-      return '⚠️ Parse error';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const result = await new Promise((resolve) => {
+        const opts = {
+          hostname: 'generativelanguage.googleapis.com',
+          path: '/v1beta/models/' + GEMINI_MODEL + ':generateContent?key=' + GEMINI_KEY,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+        };
+        const req = https.request(opts, res => {
+          let d = ''; res.on('data', c => d += c);
+          res.on('end', () => resolve({ statusCode: res.statusCode, body: d }));
+        });
+        req.on('error', (err) => resolve({ statusCode: 0, body: '', error: err.message }));
+        req.setTimeout(9000, () => { req.destroy(); resolve({ statusCode: 0, body: '', error: 'timeout' }); });
+        req.write(postData); req.end();
+      });
+      if (result.statusCode === 429) { await sleep(3000 * attempt); continue; }
+      if (result.error) { await sleep(2000); continue; }
+      try {
+        const p = JSON.parse(result.body);
+        const text = p.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return text;
+        if (p.error) break;
+      } catch {}
     }
   }
-  return '⚠️ Max retries exceeded';
+
+  // Groq fallback
+  if (GROQ_KEY) {
+    const groqBody = JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 1000, temperature: 0.7,
+    });
+    const groqResult = await new Promise((resolve) => {
+      const opts = {
+        hostname: 'api.groq.com', path: '/openai/v1/chat/completions', method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + GROQ_KEY, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(groqBody) }
+      };
+      const req = https.request(opts, res => {
+        let d = ''; res.on('data', c => d += c);
+        res.on('end', () => { try { resolve(JSON.parse(d).choices?.[0]?.message?.content || null); } catch { resolve(null); } });
+      });
+      req.on('error', () => resolve(null));
+      req.setTimeout(10000, () => { req.destroy(); resolve(null); });
+      req.write(groqBody); req.end();
+    });
+    if (groqResult) return groqResult;
+  }
+
+  return '⚠️ AI ไม่พร้อมใช้งาน กรุณาตรวจสอบ GEMINI_API_KEY หรือเพิ่ม GROQ_API_KEY';
 }
 
 // ── ดึงข้อมูล InnovestX ──
