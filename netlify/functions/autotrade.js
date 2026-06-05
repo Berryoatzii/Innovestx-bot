@@ -102,7 +102,7 @@ async function runAIAnalysis(portfolio) {
   const bodyStr = JSON.stringify({ portfolio });
   const opts = {
     hostname: 'generativelanguage.googleapis.com',
-    path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+    path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) },
   };
@@ -173,7 +173,7 @@ D = เก็งกำไร → จำกัด 1-2% ของพอร์ต
   for (let attempt = 1; attempt <= 3; attempt++) {
     const analysisOpts = {
       hostname: 'generativelanguage.googleapis.com',
-      path: `/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,
+      path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(analysisBodyStr) },
     };

@@ -1,9 +1,9 @@
 // Netlify Function: /api/ai
-// Bulletproof AI Engine — gemini-1.5-flash with 429 retry logic
+// Bulletproof AI Engine — gemini-2.0-flash with 429 retry logic
 
 const https = require('https');
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-2.0-flash';
 
 // Retry wrapper — up to 3 attempts, 2s backoff on 429
 function sleep(ms) {

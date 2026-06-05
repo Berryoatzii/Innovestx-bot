@@ -43,6 +43,20 @@ exports.handler = async (event, context) => {
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'ok', data: res }) };
     }
 
+    // ── DEBUG — shows raw InnovestX response to diagnose field mapping ──
+    if (action === 'debug') {
+      const raw = await invxGet(INVX_BASE + apiKey + '/portfolio', apiKey, apiSecret);
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({
+        raw_type: typeof raw,
+        raw_is_array: Array.isArray(raw),
+        raw_keys: typeof raw === 'object' && raw !== null ? Object.keys(raw) : [],
+        raw_data_keys: raw?.data ? Object.keys(raw.data) : [],
+        sample: Array.isArray(raw) ? raw.slice(0,2) : (raw?.data?.positions || raw?.positions || raw?.data || raw),
+        normalized: normalizePortfolio(raw),
+        cash: extractCash(raw),
+      })};
+    }
+
     // ── GET PORTFOLIO + PRICES ──
     if (action === 'getData') {
       const [port, orders] = await Promise.allSettled([
@@ -50,31 +64,22 @@ exports.handler = async (event, context) => {
         invxGet(INVX_BASE + apiKey + '/orders?status=pending', apiKey, apiSecret),
       ]);
 
-      const portfolio = port.status === 'fulfilled' ? normalizePortfolio(port.value) : [];
+      const rawPort = port.status === 'fulfilled' ? port.value : null;
+      const portfolio = rawPort ? normalizePortfolio(rawPort) : [];
       const ordersData = orders.status === 'fulfilled' ? normalizeOrders(orders.value) : [];
 
-      // ── GET REAL-TIME PRICES from Settrade (public API) ──
-      let prices = {};
-      if (portfolio.length > 0) {
-        const syms = portfolio.map(p => p.sym).join(',');
-        try {
-          const priceData = await httpGet(`https://api.settrade.com/api/quotes/stocks?symbol=${syms}`);
-          const parsed = JSON.parse(priceData);
-          if (parsed.stocks) {
-            parsed.stocks.forEach(s => { prices[s.symbol] = s.last || s.prior; });
-          }
-        } catch(e) { /* ถ้า Settrade ไม่ตอบ ใช้ราคาปิดล่าสุดจาก InnovestX */ }
-      }
+      // Extract real cash balance from InnovestX response
+      const cash = extractCash(rawPort);
 
-      // Merge prices
-      portfolio.forEach(p => {
-        if (prices[p.sym]) p.mkt = prices[p.sym];
-      });
+      // Log raw response shape for debugging
+      if (rawPort && portfolio.length === 0) {
+        console.warn('[invx] Portfolio empty — raw keys:', Object.keys(rawPort || {}).join(','));
+      }
 
       return {
         statusCode: 200,
         headers: corsHeaders,
-        body: JSON.stringify({ portfolio, orders: ordersData, cash: 45200 }),
+        body: JSON.stringify({ portfolio, orders: ordersData, cash }),
       };
     }
 
@@ -171,14 +176,42 @@ function invxDelete(url, apiKey, apiSecret) {
 
 // ── NORMALIZE InnovestX response → Dashboard format ──
 function normalizePortfolio(raw) {
-  // InnovestX portfolio endpoint returns array of positions
-  const items = Array.isArray(raw) ? raw : (raw?.positions || raw?.data || []);
-  return items.map(p => ({
-    sym:  p.symbol   || p.ticker   || p.Symbol  || '',
-    qty:  p.volume   || p.quantity || p.Volume  || 0,
-    avg:  p.avgCost  || p.avg_cost || p.AvgCost || 0,
-    mkt:  p.lastPrice|| p.last     || p.Last    || p.avgCost || 0,
-  })).filter(p => p.sym && p.qty > 0);
+  // Handle all known InnovestX response shapes
+  let items;
+  if (Array.isArray(raw)) {
+    items = raw;
+  } else if (Array.isArray(raw?.data?.positions)) {
+    items = raw.data.positions;
+  } else if (Array.isArray(raw?.data)) {
+    items = raw.data;
+  } else if (Array.isArray(raw?.positions)) {
+    items = raw.positions;
+  } else if (Array.isArray(raw?.portfolio)) {
+    items = raw.portfolio;
+  } else {
+    items = [];
+  }
+
+  return items.map(p => {
+    const avg = Number(p.avgCost || p.avg_cost || p.AvgCost || p.averageCost || p.costPrice || 0);
+    const mkt = Number(p.lastPrice || p.last || p.Last || p.marketPrice || p.currentPrice || avg);
+    const qty = Number(p.volume || p.quantity || p.Volume || p.availableVolume || p.actualVolume || 0);
+    return {
+      sym: p.symbol || p.ticker || p.Symbol || p.stockCode || '',
+      qty,
+      avg,
+      mkt,
+    };
+  }).filter(p => p.sym && p.qty > 0);
+}
+
+function extractCash(raw) {
+  if (!raw) return 0;
+  const d = raw?.data || raw;
+  return Number(
+    d?.cashBalance || d?.cash || d?.availableCash || d?.cashAvailable ||
+    d?.totalCash || d?.free_cash || raw?.cashBalance || 0
+  );
 }
 
 function normalizeOrders(raw) {

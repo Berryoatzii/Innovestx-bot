@@ -36,12 +36,12 @@ async function tgPost(method, data) {
   });
 }
 
-// ── Gemini AI (gemini-1.5-flash with 429 retry) ──
+// ── Gemini AI (gemini-2.0-flash with 429 retry) ──
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 async function askClaude(system, message) {
   const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
-  const GEMINI_MODEL = 'gemini-1.5-flash';
+  const GEMINI_MODEL = 'gemini-2.0-flash';
   if (!GEMINI_KEY) return '⚠️ ไม่พบ GEMINI_API_KEY';
 
   const prompt = system ? system + '\n\n---\n\n' + message : message;
