@@ -67,13 +67,24 @@ exports.handler = async (event, context) => {
       const rawPort = port.status === 'fulfilled' ? port.value : null;
       const portfolio = rawPort ? normalizePortfolio(rawPort) : [];
       const ordersData = orders.status === 'fulfilled' ? normalizeOrders(orders.value) : [];
-
-      // Extract real cash balance from InnovestX response
       const cash = extractCash(rawPort);
 
-      // Log raw response shape for debugging
       if (rawPort && portfolio.length === 0) {
         console.warn('[invx] Portfolio empty — raw keys:', Object.keys(rawPort || {}).join(','));
+      }
+
+      // Fetch real-time prices from Settrade (Thai market data)
+      if (portfolio.length > 0) {
+        const syms = portfolio.map(p => p.sym).join(',');
+        try {
+          const priceData = await httpGet(`https://api.settrade.com/api/quotes/stocks?symbol=${syms}`);
+          const parsed = JSON.parse(priceData);
+          if (parsed.stocks) {
+            const priceMap = {};
+            parsed.stocks.forEach(s => { if(s.last || s.prior) priceMap[s.symbol] = s.last || s.prior; });
+            portfolio.forEach(p => { if (priceMap[p.sym]) p.mkt = Number(priceMap[p.sym]); });
+          }
+        } catch(e) { /* Settrade unavailable — keep InnovestX prices */ }
       }
 
       return {

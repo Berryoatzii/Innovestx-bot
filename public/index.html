@@ -25,8 +25,8 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
 /* ── API BAR ── */
-.api-bar{background:rgba(0,0,0,.4);border-bottom:1px solid var(--border);padding:10px 24px;
-  display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.api-bar{background:rgba(0,0,0,.4);border-bottom:1px solid var(--border);padding:6px 20px;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .api-inp{background:var(--dark);border:1px solid rgba(255,193,7,.3);border-radius:6px;
   padding:8px 14px;color:#d0daf0;font-family:'Share Tech Mono',monospace;font-size:14px;width:280px;outline:none}
 .api-inp:focus{border-color:var(--gold)}
@@ -41,14 +41,17 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 @keyframes tk{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 
 /* ── MAIN LAYOUT ── */
-.wrap{display:grid;grid-template-columns:1fr 450px;gap:16px;padding:16px;max-width:1800px;margin:0 auto}
-.left{display:flex;flex-direction:column;gap:16px}
-.right{display:flex;flex-direction:column;gap:16px}
+.wrap{display:grid;grid-template-columns:1fr 420px;gap:14px;padding:14px;max-width:1900px;margin:0 auto}
+.left{display:flex;flex-direction:column;gap:14px}
+.right{display:flex;flex-direction:column;gap:14px}
+@media(max-width:1400px){.wrap{grid-template-columns:1fr 380px}}
+@media(max-width:1100px){.wrap{grid-template-columns:1fr 320px}}
+@media(max-width:860px){.wrap{grid-template-columns:1fr}}
 
 /* ── PANEL ── */
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;backdrop-filter:blur(8px)}
-.ph{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;border-bottom:1px solid var(--border)}
-.ph-t{font-family:'Share Tech Mono',monospace;font-size:14px;color:var(--gold);letter-spacing:1px;font-weight:bold}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--border)}
+.ph-t{font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--gold);letter-spacing:1px;font-weight:bold}
 .blv{font-family:'Share Tech Mono',monospace;font-size:10px;padding:4px 10px;border-radius:12px;
   background:rgba(0,230,118,.07);color:var(--green);border:1px solid rgba(0,230,118,.25);animation:pulse 2s infinite}
 
@@ -68,42 +71,43 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 .exp-btn-name{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--gold);white-space:nowrap;font-weight:bold}
 
 /* ── DAILY BRIEFING ── */
-.brief-box{padding:18px;background:rgba(255,193,7,.03);border-bottom:1px solid var(--border)}
-.brief-content{font-size:16px;line-height:1.9;color:#d0daf0;max-height:200px;overflow-y:auto}
+.brief-box{padding:14px 18px;background:rgba(255,193,7,.03);border-bottom:1px solid var(--border)}
+.brief-content{font-size:15px;line-height:1.8;color:#c8d8f0;max-height:220px;overflow-y:auto}
 .brief-content::-webkit-scrollbar{width:4px}.brief-content::-webkit-scrollbar-thumb{background:rgba(255,193,7,.3)}
-.brief-loading{color:var(--dim);font-size:15px;font-style:italic;animation:pulse 1s infinite}
+.brief-loading{color:var(--dim);font-size:14px;font-style:italic;animation:pulse 1s infinite}
 
 /* ── EXPERT ANALYSIS TABS ── */
 .tabs{display:flex;gap:0;border-bottom:1px solid var(--border)}
-.tab{flex:1;text-align:center;padding:12px 8px;font-family:'Share Tech Mono',monospace;font-size:13px;
+.tab{flex:1;text-align:center;padding:10px 6px;font-family:'Share Tech Mono',monospace;font-size:12px;
   color:var(--dim);cursor:pointer;border-bottom:3px solid transparent;transition:all .2s;background:none;border-top:none;border-left:none;border-right:none;font-weight:bold}
-.tab:hover{color:var(--text)}.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
-.tab-content{display:none;padding:16px 20px;font-size:16px;line-height:1.9;max-height:280px;overflow-y:auto}
+.tab:hover{color:#d0daf0}.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.tab-content{display:none;padding:14px 18px;font-size:15px;line-height:1.8;max-height:300px;overflow-y:auto}
 .tab-content.active{display:block}
 .tab-content::-webkit-scrollbar{width:4px}.tab-content::-webkit-scrollbar-thumb{background:rgba(255,193,7,.3)}
 
 /* ── CHAT ── */
-.chat-wrap{padding:0 16px 16px}
-.chat-box{min-height:120px;max-height:250px;overflow-y:auto;background:rgba(3,5,8,.9);
-  border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:12px;
-  font-size:16px;line-height:1.8}
+.chat-wrap{padding:0 14px 14px}
+.chat-box{min-height:100px;max-height:220px;overflow-y:auto;background:rgba(3,5,8,.9);
+  border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:10px;
+  font-size:15px;line-height:1.8}
 .chat-box::-webkit-scrollbar{width:4px}.chat-box::-webkit-scrollbar-thumb{background:rgba(255,193,7,.3)}
-.inp-row{display:flex;gap:10px}
+.inp-row{display:flex;gap:8px}
 .c-inp{flex:1;background:rgba(3,5,8,.9);border:1px solid rgba(255,193,7,.25);border-radius:8px;
-  padding:12px 16px;color:#d0daf0;font-family:'Sarabun',sans-serif;font-size:16px;outline:none}
+  padding:10px 14px;color:#d0daf0;font-family:'Sarabun',sans-serif;font-size:15px;outline:none}
 .c-inp:focus{border-color:var(--gold)}
 .send-btn{background:rgba(255,193,7,.08);border:1px solid var(--gold);color:var(--gold);
-  font-family:'Share Tech Mono',monospace;font-size:13px;padding:10px 18px;border-radius:8px;cursor:pointer;font-weight:bold}
+  font-family:'Share Tech Mono',monospace;font-size:12px;padding:10px 16px;border-radius:8px;cursor:pointer;font-weight:bold}
 .send-btn:hover{background:rgba(255,193,7,.2)}.send-btn:disabled{opacity:.3;cursor:not-allowed}
 
 /* ── PORTFOLIO TABLE ── */
-.tbl{width:100%;border-collapse:collapse;font-size:15px}
-.tbl th{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--dim);
-  padding:10px 12px;border-bottom:1px solid var(--border);background:var(--dark);text-align:left}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);
+  padding:8px 10px;border-bottom:1px solid var(--border);background:var(--dark);text-align:left;
+  position:sticky;top:0;z-index:2;white-space:nowrap}
 .tbl th.r,.tbl td.r{text-align:right}
-.tbl td{padding:10px 12px;border-bottom:1px solid rgba(255,193,7,.06);vertical-align:middle}
-.tbl tr:hover td{background:rgba(255,193,7,.04)}
-.tbl tr.cut td{background:rgba(255,23,68,.05)}.tbl tr.win td{background:rgba(0,230,118,.04)}
+.tbl td{padding:9px 10px;border-bottom:1px solid rgba(255,193,7,.06);vertical-align:middle}
+.tbl tr:hover td{background:rgba(255,193,7,.05)}
+.tbl tr.cut td{background:rgba(255,23,68,.06)}.tbl tr.win td{background:rgba(0,230,118,.04)}
 .sym{color:var(--gold);font-weight:700;font-family:'Share Tech Mono',monospace;font-size:15px;cursor:pointer;text-decoration:underline;text-underline-offset:4px}
 .pg{color:var(--green);font-weight:bold}.pr{color:var(--red);font-weight:bold}
 .tag{font-family:'Share Tech Mono',monospace;font-size:10px;padding:2px 6px;border-radius:4px;margin-left:6px;font-weight:bold}
@@ -120,18 +124,18 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 
 /* ── RIGHT PANELS ── */
 .cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px}
-.card{background:rgba(255,193,7,.03);border:1px solid var(--border);border-radius:10px;padding:14px}
-.clbl{font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--dim);margin-bottom:6px}
-.cval{font-size:22px;font-weight:700;font-family:'Share Tech Mono',monospace}.csub{font-size:13px;color:var(--dim);margin-top:4px}
+.card{background:rgba(255,193,7,.03);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.clbl{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.5px}
+.cval{font-size:24px;font-weight:700;font-family:'Share Tech Mono',monospace;line-height:1.1}.csub{font-size:12px;color:var(--dim);margin-top:4px}
 
 /* ── TRANSACTION LOG & OTHERS ── */
-.tx-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid rgba(255,193,7,.06);font-size:14px}
+.tx-item{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid rgba(255,193,7,.06);font-size:13px}
 .tx-item:last-child{border-bottom:none}
-.tx-time{color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:12px;white-space:nowrap}
-.tx-side-b{color:var(--green);font-family:'Share Tech Mono',monospace;font-size:11px;padding:2px 8px;background:rgba(0,230,118,.1);border-radius:4px;font-weight:bold}
-.tx-side-s{color:var(--red);font-family:'Share Tech Mono',monospace;font-size:11px;padding:2px 8px;background:rgba(255,23,68,.1);border-radius:4px;font-weight:bold}
-.tx-sym{color:var(--gold);font-weight:bold;font-family:'Share Tech Mono',monospace;font-size:15px}
-.tx-empty{text-align:center;padding:24px;color:var(--dim);font-size:14px}
+.tx-time{color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px;white-space:nowrap}
+.tx-side-b{color:var(--green);font-family:'Share Tech Mono',monospace;font-size:10px;padding:2px 6px;background:rgba(0,230,118,.1);border-radius:4px;font-weight:bold}
+.tx-side-s{color:var(--red);font-family:'Share Tech Mono',monospace;font-size:10px;padding:2px 6px;background:rgba(255,23,68,.1);border-radius:4px;font-weight:bold}
+.tx-sym{color:var(--gold);font-weight:bold;font-family:'Share Tech Mono',monospace;font-size:14px}
+.tx-empty{text-align:center;padding:20px;color:var(--dim);font-size:13px}
 
 .pick-item{padding:12px 0;border-bottom:1px solid rgba(255,193,7,.08);font-size:15px;line-height:1.7}
 .pick-sym{color:var(--gold);font-weight:bold;font-family:'Share Tech Mono',monospace;font-size:16px}
@@ -157,7 +161,6 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 .toast.on{transform:translateY(0);opacity:1}.toast.ok{border-color:var(--green);color:var(--green)}.toast.err{border-color:var(--red);color:var(--red)}.toast.warn{border-color:var(--yellow);color:var(--yellow)}
 .explain{font-size:14px;color:var(--dim);padding:10px 18px;border-top:1px solid var(--border);line-height:1.7}
 .explain strong{color:#d0daf0}
-@media(max-width:1000px){.wrap{grid-template-columns:1fr}}
 
 /* ── REGIME BANNER ── */
 .regime-banner{display:flex;align-items:center;gap:12px;padding:8px 18px;background:rgba(0,0,0,.4);border-bottom:1px solid rgba(255,193,7,.12);flex-wrap:wrap}
@@ -185,7 +188,7 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 .layer-tooltip:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100%+6px);left:50%;transform:translateX(-50%);background:rgba(4,6,12,.97);border:1px solid rgba(255,193,7,.3);border-radius:8px;padding:8px 12px;font-size:12px;color:#d0daf0;white-space:nowrap;z-index:1000;font-family:'Sarabun',sans-serif;line-height:1.6;pointer-events:none}
 
 
-.game-bar{background:linear-gradient(90deg,rgba(3,5,8,.98),rgba(10,15,30,.98));border-bottom:1px solid rgba(255,193,7,.25);padding:8px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.game-bar{background:linear-gradient(90deg,rgba(3,5,8,.98),rgba(10,15,30,.98));border-bottom:1px solid rgba(255,193,7,.25);padding:6px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .xp-wrap{display:flex;align-items:center;gap:10px;flex:1;min-width:200px}
 .xp-label{font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);white-space:nowrap}
 .xp-bar-outer{flex:1;height:10px;background:rgba(255,193,7,.1);border-radius:5px;border:1px solid rgba(255,193,7,.2);overflow:hidden;position:relative}
@@ -293,16 +296,16 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 </div>
 
 <div class="api-bar">
-  <span style="color:var(--yellow);font-family:'Share Tech Mono',monospace;font-size:12px">🔑 Keys อยู่ใน Netlify Server แล้ว</span>
-  <button class="api-btn" onclick="connectAll()" id="connectBtn">⚡ CONNECT</button>
-  <span class="api-st" id="apiSt" style="color:var(--yellow)">● กำลังเชื่อม...</span>
+  <span style="color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px">🔑 ENV</span>
+  <button class="api-btn" onclick="connectAll()" id="connectBtn" style="padding:5px 12px;font-size:11px">⚡ CONNECT</button>
+  <span class="api-st" id="apiSt" style="color:var(--yellow);font-size:12px">● กำลังเชื่อม...</span>
   <input class="api-inp" id="apiKey" type="hidden" value=""/>
   <input class="api-inp" id="apiSec" type="hidden" value=""/>
-  <span style="margin-left:12px;padding-left:12px;border-left:1px solid rgba(255,193,7,.3)">
-    <button class="api-btn" style="background:rgba(0,136,204,.15);border-color:#0088cc;color:#0088cc" onclick="setupTelegram()">
-      ✈ Setup Telegram
+  <span style="margin-left:auto;display:flex;align-items:center;gap:8px">
+    <button class="api-btn" style="background:rgba(0,136,204,.15);border-color:#0088cc;color:#0088cc;padding:5px 12px;font-size:11px" onclick="setupTelegram()">
+      ✈ Telegram
     </button>
-    <span id="tgSt" style="font-size:13px;font-family:monospace;margin-left:8px;color:var(--dim)">● ยังไม่เชื่อม</span>
+    <span id="tgSt" style="font-size:11px;font-family:monospace;color:var(--dim)">● ไม่เชื่อม</span>
   </span>
 </div>
 
@@ -432,14 +435,24 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
   <div class="panel">
     <div class="ph">
       <span class="ph-t">💼 พอร์ตทั้งหมด</span>
-      <span class="blv">LIVE</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="lastPriceUpdate" style="font-family:monospace;font-size:11px;color:var(--dim)">—</span>
+        <button onclick="refreshPrices()" style="background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.25);color:var(--accent);font-size:11px;padding:3px 10px;border-radius:6px;cursor:pointer;font-family:monospace">🔄</button>
+        <span class="blv">LIVE</span>
+      </div>
     </div>
-    <div style="overflow-x:auto">
+    <!-- Portfolio quick-stats bar -->
+    <div id="portStatBar" style="display:none;padding:8px 14px;background:rgba(0,0,0,.3);border-bottom:1px solid rgba(255,193,7,.08);gap:20px;flex-wrap:wrap;font-family:'Share Tech Mono',monospace;font-size:12px">
+      <span>มูลค่า: <strong id="psb-mkt" style="color:var(--gold)">—</strong></span>
+      <span>P/L: <strong id="psb-pnl" style="color:var(--red)">—</strong> <span id="psb-pct" style="color:var(--dim)"></span></span>
+      <span>หุ้น: <strong id="psb-count" style="color:var(--accent)">0</strong> ตัว</span>
+    </div>
+    <div style="overflow-x:auto;max-height:480px;overflow-y:auto">
       <table class="tbl">
         <thead><tr>
-          <th>หุ้น</th><th>Grade</th><th class="r">ถือ</th><th class="r">ต้นทุน</th>
-          <th class="r">ราคา</th><th class="r">กำไร/ขาดทุน</th><th class="r">%</th>
-          <th>Score <span style="font-size:9px;color:var(--dim)">(7-Layer)</span></th><th>Action</th><th>Order</th>
+          <th>หุ้น</th><th>Grade</th><th class="r">จำนวน</th><th class="r">ต้นทุน</th>
+          <th class="r">ราคาปัจจุบัน</th><th class="r">P/L</th><th class="r">%P/L</th>
+          <th>Score</th><th>Action</th><th>Order</th>
         </tr></thead>
         <tbody id="portBody"></tbody>
       </table>
@@ -456,6 +469,17 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 </div><!-- /left -->
 
 <div class="right">
+
+  <!-- SUMMARY — TOP of right column for instant visibility -->
+  <div class="panel">
+    <div class="ph"><span class="ph-t">📊 ภาพรวมพอร์ต</span></div>
+    <div class="cards">
+      <div class="card"><div class="clbl">มูลค่าตลาดรวม</div><div class="cval" style="color:var(--gold)" id="c-mkt">—</div><div class="csub">บาทไทย</div></div>
+      <div class="card"><div class="clbl">กำไร/ขาดทุนรวม</div><div class="cval pr" id="c-pnl">—</div><div class="csub" id="c-pct">เทียบกับต้นทุน</div></div>
+      <div class="card"><div class="clbl">กำไร (ตัวที่บวก)</div><div class="cval pg" id="c-win">—</div></div>
+      <div class="card"><div class="clbl">⚠️ ควร Cut ก่อน</div><div id="c-cuts" style="display:flex;flex-direction:column;gap:5px;margin-top:6px"></div></div>
+    </div>
+  </div>
 
   <!-- AUTO TRADER PANEL -->
   <div class="panel" id="autoTraderPanel">
@@ -497,17 +521,6 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
       <div id="atResult" style="min-height:60px;font-size:14px;line-height:1.8">
         <div style="color:var(--dim)">กด "วิเคราะห์พอร์ต" เพื่อดูว่าบอทจะทำอะไร</div>
       </div>
-    </div>
-  </div>
-
-  <!-- SUMMARY -->
-  <div class="panel">
-    <div class="ph"><span class="ph-t">📊 ภาพรวมพอร์ต</span></div>
-    <div class="cards">
-      <div class="card"><div class="clbl">มูลค่าตลาดรวม</div><div class="cval" style="color:var(--gold)" id="c-mkt">—</div><div class="csub">บาทไทย</div></div>
-      <div class="card"><div class="clbl">ขาดทุนรวม</div><div class="cval pr" id="c-pnl">—</div><div class="csub" id="c-pct">เทียบกับต้นทุน</div></div>
-      <div class="card"><div class="clbl">กำไร (ตัวที่บวก)</div><div class="cval pg" id="c-win">—</div></div>
-      <div class="card"><div class="clbl">ควร Cut ก่อน</div><div id="c-cuts" style="display:flex;flex-direction:column;gap:5px;margin-top:6px"></div></div>
     </div>
   </div>
 
@@ -602,7 +615,7 @@ const chars = EXPERTS.map((e,i)=>({
 
 const canvas = document.getElementById('officeCanvas');
 const ctx = canvas.getContext('2d');
-function resizeCanvas(){const w=canvas.parentElement.clientWidth;canvas.width=w;canvas.height=Math.round(w*0.52);}
+function resizeCanvas(){const w=canvas.parentElement.clientWidth;canvas.width=w;canvas.height=Math.round(w*0.38);}
 resizeCanvas(); window.addEventListener('resize',resizeCanvas);
 
 function startWalk(ch,tx,ty){
@@ -1015,13 +1028,27 @@ function applyAIGrades(analysisResult) {
 }
 
 function renderSummary(){
-  const{tc,tm,wPnl,lPnl}=window._tt||{tc:131450,tm:86225,wPnl:0,lPnl:0};
+  const{tc,tm,wPnl,lPnl}=window._tt||{tc:0,tm:0,wPnl:0,lPnl:0};
   const pnl=tm-tc;
+  const pct=tc>0?(pnl/tc*100).toFixed(1):0;
   document.getElementById('c-mkt').textContent='฿'+tm.toLocaleString('th-TH',{maximumFractionDigits:0});
   document.getElementById('c-pnl').textContent=(pnl>=0?'+':'')+fmtB(pnl);
   document.getElementById('c-pnl').style.color=pnl>=0?'var(--green)':'var(--red)';
-  document.getElementById('c-pct').textContent=(pnl>=0?'+':'')+(pnl/tc*100).toFixed(1)+'% จากต้นทุน';
+  document.getElementById('c-pct').textContent=(pnl>=0?'+':'')+pct+'% จากต้นทุน';
   document.getElementById('c-win').textContent='+'+fmtB(wPnl);
+  // Update portfolio stat bar
+  const sb=document.getElementById('portStatBar');
+  if(sb&&tm>0){
+    sb.style.display='flex';
+    const psbMkt=document.getElementById('psb-mkt');
+    const psbPnl=document.getElementById('psb-pnl');
+    const psbPct=document.getElementById('psb-pct');
+    const psbCnt=document.getElementById('psb-count');
+    if(psbMkt) psbMkt.textContent='฿'+tm.toLocaleString('th-TH',{maximumFractionDigits:0});
+    if(psbPnl){ psbPnl.textContent=(pnl>=0?'+':'')+fmtB(pnl); psbPnl.style.color=pnl>=0?'var(--green)':'var(--red)'; }
+    if(psbPct) psbPct.textContent='('+pct+'%)';
+    if(psbCnt) psbCnt.textContent=PORTFOLIO.length;
+  }
   setTimeout(buildCutsWithTG, 50);
 }
 
@@ -1266,6 +1293,26 @@ renderPort(); renderTxLog();
 setTimeout(autoInit, 500);
 setInterval(updateClock,1000); updateClock();
 setInterval(wobble,5000);
+
+// Auto-refresh portfolio prices every 3 minutes
+async function refreshPrices(){
+  try{
+    const r=await originalFetch('/api/invx?action=getData');
+    if(r.ok){
+      const d=await r.json();
+      if(d.portfolio&&d.portfolio.length>0){
+        PORTFOLIO=d.portfolio;
+        renderPort();
+        const now=new Date();
+        const ts=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
+        const el=document.getElementById('lastPriceUpdate');
+        if(el) el.textContent='อัปเดตล่าสุด '+ts;
+        addLog('info','🔄 อัปเดตราคาอัตโนมัติ '+ts);
+      }
+    }
+  }catch(e){}
+}
+setInterval(refreshPrices, 3*60*1000);
 
 // ══════════════════════════════════════════════════════════
 //  GAME SYSTEM — XP, Level, Achievements

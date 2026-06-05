@@ -64,6 +64,37 @@ async function geminiRaw(body) {
   return { error: 'max_retries' };
 }
 
+// Groq (fast, 14k req/day free)
+async function groqFallback(prompt, maxTokens = 1200) {
+  if (!GROQ_KEY) return null;
+  const bodyStr = JSON.stringify({
+    model: 'llama-3.3-70b-versatile',
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: maxTokens,
+    temperature: 0.5,
+  });
+  return new Promise((resolve) => {
+    const opts = {
+      hostname: 'api.groq.com', path: '/openai/v1/chat/completions', method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + GROQ_KEY,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr),
+      },
+    };
+    const req = https.request(opts, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => {
+        try { resolve(JSON.parse(d).choices?.[0]?.message?.content || null); }
+        catch { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.setTimeout(8000, () => { req.destroy(); resolve(null); });
+    req.write(bodyStr); req.end();
+  });
+}
+
 async function gemini(systemPrompt, userMessage) {
   const prompt = systemPrompt ? systemPrompt + '\n\n---\n\n' + userMessage : userMessage;
 
