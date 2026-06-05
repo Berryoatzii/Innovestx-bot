@@ -64,57 +64,56 @@ function geminiHTTP(bodyStr) {
   });
 }
 
-// Text completion — tries Gemini first, falls back to Groq
+// Text completion — tries Groq first (faster/higher quota), falls back to Gemini
 async function askGemini(prompt, maxTokens = 800, temperature = 0.4) {
-  if (GEMINI_KEY) {
-    const bodyStr = JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: maxTokens, temperature },
-    });
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const r = await geminiHTTP(bodyStr);
-      if (r.error === 'timeout' || r.error) {
-        if (attempt < 3) { await sleep(2000 * attempt); continue; }
-        break;
-      }
-      if (r.statusCode === 429) {
-        if (attempt < 3) { await sleep(3000 * attempt); continue; }
-        break; // quota — try Groq
-      }
-      try {
-        const p = JSON.parse(r.body);
-        if (p.error) break;
-        const text = p.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) return text;
-      } catch {}
-    }
+  // Groq first
+  if (GROQ_KEY) {
+    const text = await groqHTTP(prompt, maxTokens, false);
+    if (text) return text;
   }
 
-  // Groq fallback
-  const groqText = await groqHTTP(prompt, maxTokens, false);
-  if (groqText) return groqText;
-
-  return '⚠️ AI ไม่พร้อมใช้งาน (Gemini quota + Groq ไม่พร้อม)';
+  // Gemini fallback — single attempt only
+  if (!GEMINI_KEY) return '⚠️ ไม่พบ GEMINI_API_KEY หรือ GROQ_API_KEY';
+  const bodyStr = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: maxTokens, temperature },
+  });
+  const r = await geminiHTTP(bodyStr);
+  if (r.error) return '⚠️ ' + r.error;
+  if (r.statusCode === 429) return '⚠️ Gemini quota หมด';
+  try {
+    const p = JSON.parse(r.body);
+    if (p.error) return '⚠️ ' + p.error.message;
+    return p.candidates?.[0]?.content?.parts?.[0]?.text || '⚠️ AI ไม่ตอบ';
+  } catch { return '⚠️ Parse error'; }
 }
 
-// JSON completion — tries Groq (faster JSON mode) or falls back through askGemini
+// JSON completion — Groq JSON mode first (reliable), Gemini fallback
 async function askGeminiJSON(prompt, maxTokens = 1200) {
-  // Try Groq JSON mode first if available (more reliable JSON output)
+  const jsonPrompt = prompt + '\n\nตอบ JSON เท่านั้น ไม่มีข้อความอื่น';
+
   if (GROQ_KEY) {
     try {
-      const text = await groqHTTP(prompt + '\n\nตอบ JSON เท่านั้น ไม่มีข้อความอื่น', maxTokens, true);
+      const text = await groqHTTP(jsonPrompt, maxTokens, true);
       if (text) {
         const clean = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
-        const parsed = JSON.parse(clean);
-        if (parsed) return parsed;
+        return JSON.parse(clean);
       }
     } catch {}
   }
 
-  // Fallback to Gemini
-  const text = await askGemini(prompt + '\n\nตอบ JSON เท่านั้น ไม่มีข้อความอื่น', maxTokens, 0.2);
-  if (text.startsWith('⚠️')) return null;
+  // Gemini fallback (single attempt)
+  if (!GEMINI_KEY) return null;
+  const bodyStr = JSON.stringify({
+    contents: [{ parts: [{ text: jsonPrompt }] }],
+    generationConfig: { maxOutputTokens: maxTokens, temperature: 0.2 },
+  });
+  const r = await geminiHTTP(bodyStr);
+  if (r.error || r.statusCode !== 200) return null;
   try {
+    const p = JSON.parse(r.body);
+    if (p.error) return null;
+    const text = p.candidates?.[0]?.content?.parts?.[0]?.text || '';
     const clean = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
     return JSON.parse(clean);
   } catch { return null; }

@@ -565,10 +565,9 @@ window.fetch = async function(...args) {
 };
 
 // ══════════════════════════════════════════════════════════
-//  SPRITE ENGINE (แก้ไขชื่อไฟล์ภาพให้ตรงแล้ว)
+//  SPRITE ENGINE — Emoji Canvas (ไม่ต้องใช้รูปภาพ)
 // ══════════════════════════════════════════════════════════
-const spriteImg = new Image();
-spriteImg.src = 'image_4ec13b.png'; 
+const EXPERT_EMOJI = {buffett:'🎩',druckenmiller:'💹',minervini:'⚡',lynch:'🚀',niwes:'📚',dalio:'⚖️',simons:'🔬',cathie:'🌐'};
 
 const EXPERTS = [
   {id:'buffett',      name:'Buffett',       role:'Value — วิเคราะห์ Moat+ROE+FCF',        color:'#ffc107',
@@ -635,55 +634,99 @@ function updateChar(ch,dt){
 }
 
 function drawChar(ch){
-  if(!spriteImg.complete || !spriteImg.naturalWidth) return;
   const sc = canvas.width / 1350;
   const px = ch.x * canvas.width, py = ch.y * canvas.height;
-  
-  const dw = ch.e.sw * sc * 0.9;
-  const dh = ch.e.sh * sc * 0.9;
-  
+  const r = Math.round(20 * sc);
   const bounce = ch.state === STATE.WALK ? Math.abs(Math.sin(ch.pathT * Math.PI * 8)) * 8 * sc : 0;
+  const cy = py - r - bounce;
+  const emoji = EXPERT_EMOJI[ch.e.id] || '👤';
 
-  if(ch.highlight){ ctx.save(); ctx.shadowColor=ch.e.color; ctx.shadowBlur=25; }
-  
-  ctx.drawImage(spriteImg, ch.e.sx, ch.e.sy, ch.e.sw, ch.e.sh, px - dw/2, py - dh - bounce, dw, dh);
-  
-  if(ch.highlight) ctx.restore();
-  
-  /* ขยายขนาดฟอนต์บน Canvas ให้ใหญ่และอ่านชัดขึ้น */
-  ctx.save(); ctx.font=Math.round(16*sc)+'px "Share Tech Mono", monospace'; ctx.textAlign='center';
-  const lw=ctx.measureText(ch.e.name.split(' ')[0]).width+20;
-  ctx.fillStyle='rgba(3,5,8,0.85)'; ctx.fillRect(px-lw/2, py+5, lw, 22*sc);
-  ctx.fillStyle=ch.e.color; ctx.fillText(ch.e.name.split(' ')[0], px, py+20*sc);
-  
-  if(ch.speechText){
-    ctx.font=Math.round(16*sc)+'px "Sarabun", sans-serif';
-    const tw=ctx.measureText(ch.speechText).width+24, bw=Math.max(tw,60), bh=30*sc;
-    const bx=px-bw/2, by=py-dh-bh-bounce-8;
-    ctx.fillStyle='rgba(4,6,9,0.96)'; ctx.strokeStyle=ch.e.color; ctx.lineWidth=1.5;
-    ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,6); ctx.fill(); ctx.stroke();
-    ctx.fillStyle='rgba(4,6,9,0.96)'; ctx.beginPath(); ctx.moveTo(px-5,by+bh); ctx.lineTo(px+5,by+bh); ctx.lineTo(px,by+bh+10); ctx.fill();
-    ctx.strokeStyle=ch.e.color; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(px-5,by+bh); ctx.lineTo(px,by+bh+10); ctx.lineTo(px+5,by+bh); ctx.stroke();
-    ctx.fillStyle=ch.e.color; ctx.fillText(ch.speechText, px, by+bh*0.7);
-  }
+  ctx.save();
+
+  // Glow when highlight
+  if(ch.highlight){ ctx.shadowColor=ch.e.color; ctx.shadowBlur=28*sc; }
+
+  // Shadow on floor
+  ctx.fillStyle='rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(px, py+2, r*0.65, r*0.18, 0, 0, Math.PI*2); ctx.fill();
+
+  // Circle body
+  ctx.fillStyle = ch.e.color+'22';
+  ctx.strokeStyle = ch.e.color;
+  ctx.lineWidth = 2*sc;
+  ctx.beginPath(); ctx.arc(px, cy, r, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+
+  // Emoji character
+  ctx.shadowBlur = 0;
+  ctx.font = Math.round(r*1.25)+'px serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(emoji, px, cy);
+
   ctx.restore();
+
+  // Name label
+  const fs = Math.round(11*sc);
+  ctx.save();
+  ctx.font='bold '+fs+'px "Share Tech Mono",monospace';
+  ctx.textAlign='center';
+  const nm=ch.e.name.split(' ')[0];
+  const lw=ctx.measureText(nm).width+14;
+  ctx.fillStyle='rgba(3,5,8,0.88)'; ctx.fillRect(px-lw/2, py+4, lw, fs+6);
+  ctx.fillStyle=ch.e.color; ctx.fillText(nm, px, py+fs+5);
+  ctx.restore();
+
+  // Speech bubble
+  if(ch.speechText){
+    const bfs=Math.round(12*sc);
+    ctx.save();
+    ctx.font=bfs+'px "Sarabun",sans-serif'; ctx.textAlign='center';
+    const tw=ctx.measureText(ch.speechText).width+22, bw=Math.max(tw,60), bh=bfs+14;
+    const bx=px-bw/2, by=cy-r-bh-8;
+    ctx.fillStyle='rgba(4,6,9,0.95)'; ctx.strokeStyle=ch.e.color; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='rgba(4,6,9,0.95)';
+    ctx.beginPath(); ctx.moveTo(px-5,by+bh); ctx.lineTo(px+5,by+bh); ctx.lineTo(px,by+bh+8); ctx.fill();
+    ctx.strokeStyle=ch.e.color; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(px-5,by+bh); ctx.lineTo(px,by+bh+8); ctx.lineTo(px+5,by+bh); ctx.stroke();
+    ctx.fillStyle=ch.e.color; ctx.fillText(ch.speechText, px, by+bh*0.68);
+    ctx.restore();
+  }
 }
 
 function renderOffice(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle='#050810'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Background
+  const grad = ctx.createLinearGradient(0,0,0,canvas.height);
+  grad.addColorStop(0,'#030508'); grad.addColorStop(1,'#060c18');
+  ctx.fillStyle=grad; ctx.fillRect(0,0,canvas.width,canvas.height);
 
   const sc = canvas.width / 1350;
-  
-  if(spriteImg.complete && spriteImg.naturalWidth){
-    EXPERTS.forEach(e => {
-      const dw = DESK.sw * sc * 0.7;
-      const dh = DESK.sh * sc * 0.7;
-      const px = e.deskX * canvas.width;
-      const py = e.deskY * canvas.height;
-      ctx.drawImage(spriteImg, DESK.sx, DESK.sy, DESK.sw, DESK.sh, px - dw/2, py - dh/2, dw, dh);
-    });
-  }
+
+  // Grid floor
+  ctx.strokeStyle='rgba(255,193,7,0.04)'; ctx.lineWidth=1;
+  for(let x=0;x<canvas.width;x+=55*sc){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();}
+  for(let y=0;y<canvas.height;y+=55*sc){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}
+
+  // Meeting zone circle
+  const mx=MEETING.x*canvas.width, my=MEETING.y*canvas.height;
+  ctx.strokeStyle='rgba(255,193,7,0.12)'; ctx.lineWidth=1; ctx.setLineDash([4,10]);
+  ctx.beginPath(); ctx.ellipse(mx,my,130*sc,28*sc,0,0,Math.PI*2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,193,7,0.07)'; ctx.font=Math.round(9*sc)+'px monospace';
+  ctx.textAlign='center'; ctx.fillText('MEETING ZONE', mx, my+4*sc);
+
+  // Desks for each expert
+  EXPERTS.forEach(e=>{
+    const px=e.deskX*canvas.width, py=e.deskY*canvas.height;
+    const dw=76*sc, dh=36*sc;
+    // desk surface
+    ctx.fillStyle=e.color+'18'; ctx.strokeStyle=e.color+'55'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.roundRect(px-dw/2, py-dh/2+22*sc, dw, dh, 4*sc); ctx.fill(); ctx.stroke();
+    // monitor screen
+    ctx.fillStyle='rgba(0,229,255,0.07)'; ctx.strokeStyle='rgba(0,229,255,0.25)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.roundRect(px-18*sc, py-dh/2+6*sc, 36*sc, 18*sc, 2*sc); ctx.fill(); ctx.stroke();
+  });
 
   [...chars].sort((a,b)=>a.y-b.y).forEach(drawChar);
 }
@@ -713,16 +756,21 @@ canvas.addEventListener('click',e=>{
   if(best&&bd<0.08){selectExpert(best.e.id);best.speechText=best.e.speech[best.speechIdx%best.e.speech.length];best.speechTimer=4;best.speechIdx++;}
 });
 
-document.getElementById('expRow').innerHTML = EXPERTS.map(e=>'<div class="exp-btn" id="eb-'+e.id+'" data-id="'+e.id+'" onclick="selectExpert(this.dataset.id)"><canvas width="'+e.sw+'" height="'+e.sh+'" id="p-'+e.id+'" style="height:38px;width:auto;image-rendering:auto"></canvas><span class="exp-btn-name">'+e.name.split(' ')[0]+'</span></div>').join('');
+// Expert row buttons — use emoji portrait (no sprite image needed)
+document.getElementById('expRow').innerHTML = EXPERTS.map(e=>`<div class="exp-btn" id="eb-${e.id}" data-id="${e.id}" onclick="selectExpert(this.dataset.id)"><span style="font-size:26px;line-height:1">${EXPERT_EMOJI[e.id]||'👤'}</span><span class="exp-btn-name">${e.name.split(' ')[0]}</span></div>`).join('');
 function drawPortraits(){
-  if(!spriteImg.complete || !spriteImg.naturalWidth) { setTimeout(drawPortraits,400); return; }
   EXPERTS.forEach(e=>{
     const c=document.getElementById('p-'+e.id); if(!c)return;
+    c.width=60;c.height=60;
     const pc=c.getContext('2d');
-    pc.drawImage(spriteImg, e.sx, e.sy, e.sw, e.sh, 0, 0, e.sw, e.sh);
+    pc.clearRect(0,0,60,60);
+    pc.fillStyle=e.color+'25'; pc.strokeStyle=e.color; pc.lineWidth=2;
+    pc.beginPath(); pc.arc(30,30,26,0,Math.PI*2); pc.fill(); pc.stroke();
+    pc.font='26px serif'; pc.textAlign='center'; pc.textBaseline='middle';
+    pc.fillText(EXPERT_EMOJI[e.id]||'👤',30,32);
   });
 }
-setTimeout(drawPortraits,1000);
+drawPortraits();
 
 function buildDutyBoard(){
   document.getElementById('dutyBoard').innerHTML = EXPERTS.map(e=>'<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,193,7,.07);font-size:14px"><span style="font-size:18px;width:24px;flex-shrink:0">'+({buffett:'📖',druckenmiller:'📡',minervini:'⚡',dalio:'🛡️',lynch:'🔍',niwes:'🇹🇭',simons:'📊',cathie:'🚀'}[e.id]||'•')+'</span><div><div style="font-family:monospace;font-size:12px;color:'+e.color+';margin-bottom:4px;font-weight:bold">'+e.name+'</div><div style="color:var(--dim)">'+e.duty+'</div></div></div>').join('');

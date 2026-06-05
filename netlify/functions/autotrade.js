@@ -203,36 +203,7 @@ D = เก็งกำไร → จำกัด 1-2% ของพอร์ต
 
 ตอบ JSON เท่านั้น`;
 
-  // Try Gemini first
-  if (GEMINI_KEY) {
-    const analysisBodyStr = JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { maxOutputTokens: 2000, temperature: 0.2 },
-    });
-
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const analysisOpts = {
-        hostname: 'generativelanguage.googleapis.com',
-        path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(analysisBodyStr) },
-      };
-      const r = await httpsRequest(analysisOpts, analysisBodyStr);
-      if (r.statusCode === 429) { await sleep(4000 * attempt); continue; }
-      if (r.error) { await sleep(2000); continue; }
-      try {
-        const p = JSON.parse(r.body);
-        const text = p.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        const clean = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
-        const parsed = JSON.parse(clean);
-        if (parsed.regime && Array.isArray(parsed.stocks)) return parsed;
-      } catch {}
-      await sleep(1000);
-    }
-    console.warn('[AutoTrader] Gemini failed — trying Groq fallback');
-  }
-
-  // Groq fallback (free, 14k req/day)
+  // Try Groq first (fast, high free quota)
   if (GROQ_KEY) {
     try {
       const text = await groqRequest(prompt, 2000);
@@ -240,11 +211,35 @@ D = เก็งกำไร → จำกัด 1-2% ของพอร์ต
         const clean = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
         const parsed = JSON.parse(clean);
         if (parsed.regime && Array.isArray(parsed.stocks)) {
-          console.log('[AutoTrader] Groq fallback succeeded');
+          console.log('[AutoTrader] Groq succeeded');
           return parsed;
         }
       }
-    } catch (e) { console.warn('[AutoTrader] Groq fallback error:', e.message); }
+    } catch (e) { console.warn('[AutoTrader] Groq error:', e.message); }
+  }
+
+  // Gemini fallback — single attempt
+  if (GEMINI_KEY) {
+    const analysisBodyStr = JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: 2000, temperature: 0.2 },
+    });
+    const analysisOpts = {
+      hostname: 'generativelanguage.googleapis.com',
+      path: `/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_KEY}`,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(analysisBodyStr) },
+    };
+    try {
+      const r = await httpsRequest(analysisOpts, analysisBodyStr);
+      if (r.statusCode === 200) {
+        const p = JSON.parse(r.body);
+        const text = p.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const clean = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(clean);
+        if (parsed.regime && Array.isArray(parsed.stocks)) return parsed;
+      }
+    } catch (e) { console.warn('[AutoTrader] Gemini error:', e.message); }
   }
 
   return null;

@@ -64,66 +64,36 @@ async function geminiRaw(body) {
   return { error: 'max_retries' };
 }
 
-// Groq fallback (free, OpenAI-compatible)
-async function groqFallback(prompt, maxTokens = 1200) {
-  if (!GROQ_KEY) return null;
-  const bodyStr = JSON.stringify({
-    model: 'llama-3.3-70b-versatile',
-    messages: [{ role: 'user', content: prompt }],
-    max_tokens: maxTokens,
-    temperature: 0.5,
-  });
-  return new Promise((resolve) => {
-    const opts = {
-      hostname: 'api.groq.com',
-      path: '/openai/v1/chat/completions',
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + GROQ_KEY,
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(bodyStr),
-      },
-    };
-    const req = https.request(opts, (res) => {
-      let d = ''; res.on('data', c => d += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(d).choices?.[0]?.message?.content || null); }
-        catch { resolve(null); }
-      });
-    });
-    req.on('error', () => resolve(null));
-    req.setTimeout(10000, () => { req.destroy(); resolve(null); });
-    req.write(bodyStr); req.end();
-  });
-}
-
 async function gemini(systemPrompt, userMessage) {
   const prompt = systemPrompt ? systemPrompt + '\n\n---\n\n' + userMessage : userMessage;
 
+  // Try Groq first — faster, 14,400 req/day free
+  if (GROQ_KEY) {
+    const text = await groqFallback(prompt, 1200);
+    if (text) return text;
+  }
+
+  // Gemini fallback — one attempt only (no retry on 429 to avoid Netlify timeout)
   if (GEMINI_KEY) {
     const bodyStr = JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { maxOutputTokens: 1200, temperature: 0.5 },
     });
-
     const result = await geminiRaw(bodyStr);
-
-    if (result.error !== 'quota_exceeded' && result.error !== 'timeout' && !result.error) {
+    if (!result.error && result.statusCode === 200) {
       try {
         const p = JSON.parse(result.body);
         if (!p.error) {
           const text = p.candidates?.[0]?.content?.parts?.[0]?.text;
           if (text) return text;
         }
+        if (p.error) return `⚠️ [Gemini]: ${p.error.message}`;
       } catch {}
     }
   }
 
-  // Groq fallback
-  const groqText = await groqFallback(prompt, 1200);
-  if (groqText) return groqText;
-
-  return '⚠️ [AI]: ทั้ง Gemini และ Groq ไม่พร้อมใช้งาน กรุณาตรวจสอบ API Keys';
+  if (!GROQ_KEY && !GEMINI_KEY) return '⚠️ [System]: ไม่พบ API Key — ตรวจสอบ GROQ_API_KEY หรือ GEMINI_API_KEY';
+  return '⚠️ [AI]: ทั้ง Groq และ Gemini ไม่ตอบสนอง กรุณาลองใหม่';
 }
 
 const EXPERT_SYSTEMS = {
