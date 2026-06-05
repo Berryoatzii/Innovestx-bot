@@ -110,12 +110,18 @@ async function analyzeStockBatch(stocks, regime) {
 
   const stockList = stocks.map(s => {
     const pnl = s.avg > 0 ? ((s.mkt - s.avg) / s.avg * 100).toFixed(1) : '0';
-    return `${s.sym}: ต้นทุน=${s.avg} ราคา=${s.mkt} P/L=${pnl}% จำนวน=${s.qty}หุ้น`;
+    return `${s.sym}: ราคาปัจจุบัน=${s.mkt} P/L=${pnl}% จำนวน=${s.qty}หุ้น`;
   }).join('\n');
 
-  const prompt = `คุณคือ 7-Layer AI Investment System วิเคราะห์หุ้น SET ไทย
+  const prompt = `คุณคือ Zero-Sympathy 7-Layer Investment System วิเคราะห์หุ้น SET ไทย
 Market Regime: ${regimeInfo.label} (confidence: ${regime.confidence}%)
 Macro: ${JSON.stringify(regime.macro_signals || {})}
+
+═══ ZERO-SYMPATHY PROTOCOL ═══
+- ประเมินทุกหุ้นราวกับคุณถือเงินสดวันนี้ — "คุณจะซื้อหุ้นนี้ที่ราคาปัจจุบันไหม?"
+- ราคาทุนเดิมไม่มีผลต่อการตัดสินใจ (Sunk Cost Eliminated)
+- dca_eligible = false ถ้า P/L <= -30% (No Averaging Down — ห้ามซื้อเพิ่มในสิ่งที่กำลังพัง)
+- reason_th ต้องเป็น forward-looking เท่านั้น
 
 หุ้นที่ต้องวิเคราะห์:
 ${stockList}
@@ -136,15 +142,15 @@ ${stockList}
     "target_pct": 0-12,
     "dca_eligible": true|false,
     "cut_eligible": true|false,
-    "reason_th": "เหตุผล 1 ประโยคภาษาไทย"
+    "reason_th": "เหตุผล forward-looking 1 ประโยคภาษาไทย"
   }
 ]
 
-คำนิยาม Grade:
-A = Core Hold (fundamental แข็ง, trend ดี, final_score >= 65)
-B = Trade (พอไปได้, final_score 45-64)
-C = Dead Capital (fundamental แย่/trend พัง, ควร Exit, final_score < 45 หรือ P/L <= -60%)
-D = Speculative (high risk, จำกัด 1-2%)
+คำนิยาม Grade (ประเมินจาก Forward Potential เท่านั้น):
+A = Core Hold (fundamental แข็ง, trend ดี, final_score >= 65) — dca_eligible ได้เฉพาะ P/L > -30%
+B = Trade (พอไปได้, final_score 45-64) — hold only
+C = Dead Capital (fundamental แย่/trend พัง → EXIT, final_score < 45) — cut_eligible = true
+D = Speculative (high risk, จำกัด 1-2%) — dca_eligible = false เสมอ
 
 คำนิยาม Action:
 STRONG_BUY: final >= 85
@@ -184,7 +190,11 @@ function masterAllocation(stockAnalysis, regime) {
     else if (adjustedScore >= 30) finalAction = 'SELL';
     else finalAction = 'STRONG_SELL';
 
-    return { ...s, adjusted_score: adjustedScore, final_action: finalAction };
+    // Hard override: No Averaging Down — extract P/L from reason context not available here,
+    // so enforce at grade level: Grade C/D stocks are never DCA eligible
+    const dcaEligible = s.dca_eligible && s.grade === 'A' && adjustedScore >= 55;
+
+    return { ...s, adjusted_score: adjustedScore, final_action: finalAction, dca_eligible: dcaEligible };
   });
 }
 
@@ -219,7 +229,8 @@ async function runFullPortfolioAnalysis(portfolio) {
           final_score: Math.round(score),
           action: score < 35 ? 'SELL' : score < 45 ? 'HOLD' : 'WATCHLIST',
           target_pct: grade === 'A' ? 8 : grade === 'B' ? 4 : 0,
-          dca_eligible: pnl < -20 && pnl > -50 && grade !== 'C',
+          // No Averaging Down: only eligible if loss is within -30% AND grade is A
+          dca_eligible: pnl > -30 && grade === 'A',
           cut_eligible: pnl <= -50 || grade === 'C',
           reason_th: `คำนวณจากกฎ P/L: ${pnl.toFixed(1)}%`,
         });

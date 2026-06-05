@@ -108,17 +108,27 @@ async function runAIAnalysis(portfolio) {
   };
 
   // Build a combined regime + stock analysis prompt (1 single API call)
+  // Note: avg cost included only for position-size context; AI must NOT use it as basis for hold/sell decisions
   const stockList = portfolio.map(s => {
     const pnl = s.avg > 0 ? ((s.mkt - s.avg) / s.avg * 100).toFixed(1) : '0';
-    return `${s.sym}: ต้นทุน=${s.avg} ราคา=${s.mkt} P/L=${pnl}% จำนวน=${s.qty}หุ้น`;
+    return `${s.sym}: ราคาปัจจุบัน=${s.mkt} P/L=${pnl}% จำนวน=${s.qty}หุ้น`;
   }).join('\n');
 
-  const prompt = `คุณคือ 7-Layer AI Investment System สำหรับตลาดหุ้นไทย SET
+  const prompt = `คุณคือ Zero-Sympathy Institutional Fund Manager สำหรับตลาดหุ้นไทย SET
 วันที่: ${new Date().toLocaleDateString('th-TH')}
+
+═══ ZERO-SYMPATHY PROTOCOL (บังคับใช้เสมอ) ═══
+1. ZERO-SYMPATHY: ประเมินทุกหุ้นราวกับคุณถือเงินสดอยู่วันนี้
+   คำถามคือ "ถ้าไม่มีหุ้นนี้ คุณจะซื้อมันที่ราคาปัจจุบันนี้ไหม?"
+   ถ้าคำตอบคือ "ไม่" → SELL ทันที ไม่ว่า P/L จะเป็นเท่าไร
+2. SUNK COST ELIMINATION: ราคาทุนเดิมไม่มีผลต่อการตัดสินใจ
+   ประเมินจาก forward potential เท่านั้น — อดีตที่ผ่านไปแล้วไม่สามารถเรียกคืนได้
+3. NO AVERAGING DOWN: dca_eligible = false เสมอถ้า P/L <= -30%
+   ห้ามแนะนำซื้อเพิ่มในสิ่งที่กำลังพัง
 
 ขั้นตอน:
 1. ประเมิน Market Regime ก่อน
-2. วิเคราะห์แต่ละหุ้นตาม 7 Layers
+2. วิเคราะห์แต่ละหุ้นตาม Forward Potential (ไม่ใช่ราคาทุนเดิม)
 
 หุ้นในพอร์ต:
 ${stockList}
@@ -142,16 +152,16 @@ ${stockList}
       "action": "STRONG_BUY|BUY|WATCHLIST|HOLD|SELL|STRONG_SELL",
       "cut_eligible": true|false,
       "dca_eligible": true|false,
-      "reason_th": "เหตุผล 1 ประโยคภาษาไทย"
+      "reason_th": "เหตุผล forward-looking 1 ประโยคภาษาไทย (ห้ามพูดถึงราคาทุนเดิม)"
     }
   ]
 }
 
-Grade คือ:
-A = fundamental แข็ง final_score>=65 → ถือ/DCA
-B = ปานกลาง final_score 45-64 → ถือ
-C = แย่/ดอย final_score<45 หรือ P/L<=-60% → ขาย
-D = เก็งกำไร → จำกัด position
+Grade (ประเมินจาก Forward Potential เท่านั้น):
+A = fundamental แข็ง momentum ดี → ถือ (dca_eligible ได้ถ้า P/L > -30%)
+B = ปานกลาง → ถือดู
+C = fundamental แย่/trend พัง → EXIT ทันที (สินทรัพย์ตาย)
+D = เก็งกำไร → จำกัด 1-2% ของพอร์ต
 
 ตอบ JSON เท่านั้น`;
 
@@ -254,7 +264,8 @@ async function runAutoTrader(mode) {
       action: ai?.action || (pnlPct <= -70 ? 'SELL' : pnlPct <= -50 ? 'SELL' : 'HOLD'),
       reason_th: ai?.reason_th || `P/L ${pnlPct.toFixed(1)}%`,
       cut_eligible: ai?.cut_eligible ?? (pnlPct <= DEEP_LOSS_PCT),
-      dca_eligible: ai?.dca_eligible ?? false,
+      // No Averaging Down: never DCA into a position down more than 30%
+      dca_eligible: ai ? (ai.dca_eligible && pnlPct > -30) : false,
       value_score: ai?.value_score, momentum_score: ai?.momentum_score,
       growth_score: ai?.growth_score, risk_score: ai?.risk_score,
     };
