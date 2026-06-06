@@ -1,0 +1,22 @@
+{
+  "functions": {
+    "api/usage.js": { "maxDuration": 10 },
+    "api/widget.js": { "maxDuration": 10 }
+  },
+  "headers": [
+    {
+      "source": "/api/widget",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    },
+    {
+      "source": "/api/usage",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST" }
+      ]
+    }
+  ]
+}
