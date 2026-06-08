@@ -3,6 +3,107 @@
 // Deploy ที่ Netlify → เรียก /.netlify/functions/invx
 
 const https = require('https');
+const crypto = require('crypto');
+
+// ── Settrade ECDSA-SHA256 Signer ──────────────────────────────────────────────
+// sdk source: settrade_v2/util.py → create_sha256_with_ecdsa_signature
+// api_secret = base64-encoded raw 32-byte secp256r1 private key
+const PKCS8_SECP256R1_PREFIX = Buffer.from(
+  '3041020100301306072a8648ce3d020106082a8648ce3d030107042730250201010420', 'hex'
+);
+function signSettrade(appId, appSecret, params = '') {
+  const timestamp = Date.now().toString();
+  const content = `${appId}.${params}.${timestamp}`;
+  const rawKey = Buffer.from(appSecret, 'base64');
+  const pkcs8Der = Buffer.concat([PKCS8_SECP256R1_PREFIX, rawKey]);
+  const privKey = crypto.createPrivateKey({ key: pkcs8Der, format: 'der', type: 'pkcs8' });
+  const sig = crypto.createSign('SHA256');
+  sig.update(content, 'utf8');
+  return { signature: sig.sign(privKey, 'hex'), timestamp };
+}
+
+async function settradeLogin(appId, appSecret, brokerId, appCode) {
+  const { signature, timestamp } = signSettrade(appId, appSecret);
+  const loginUrl = `https://open-api.settrade.com/api/oam/v1/${brokerId}/broker-apps/${appCode}/login`;
+  const r = await httpsPost(loginUrl, {
+    apiKey: appId, params: '', signature, timestamp,
+  });
+  if (!r.access_token) throw new Error(`Settrade login failed: ${JSON.stringify(r).slice(0, 200)}`);
+  return { token: r.access_token, tokenType: r.token_type || 'Bearer' };
+}
+
+function httpsPost(url, body) {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify(body);
+    const u = new URL(url);
+    const opts = {
+      hostname: u.hostname, path: u.pathname + (u.search || ''), method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData), 'Accept': 'application/json' },
+    };
+    const req = https.request(opts, res => {
+      let data = ''; res.on('data', c => data += c);
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(data); } });
+    });
+    req.on('error', reject); req.write(postData); req.end();
+  });
+}
+
+function authGet(url, token, tokenType = 'Bearer') {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const opts = {
+      hostname: u.hostname, path: u.pathname + (u.search || ''), method: 'GET',
+      headers: { 'Authorization': `${tokenType} ${token}`, 'Accept': 'application/json' },
+    };
+    const req = https.request(opts, res => {
+      let data = ''; res.on('data', c => data += c);
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(data); } });
+    });
+    req.on('error', reject); req.end();
+  });
+}
+
+function authPost(url, token, tokenType, body) {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify(body);
+    const u = new URL(url);
+    const opts = {
+      hostname: u.hostname, path: u.pathname + (u.search || ''), method: 'POST',
+      headers: {
+        'Authorization': `${tokenType} ${token}`,
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData), 'Accept': 'application/json',
+      },
+    };
+    const req = https.request(opts, res => {
+      let data = ''; res.on('data', c => data += c);
+      res.on('end', () => {
+        const sc = res.statusCode; const loc = res.headers?.location || '';
+        try { resolve({ statusCode: sc, location: loc, body: JSON.parse(data) }); }
+        catch(e) { resolve({ statusCode: sc, location: loc, body: data }); }
+      });
+    });
+    req.on('error', reject); req.write(postData); req.end();
+  });
+}
+
+function authPatch(url, token, tokenType, body) {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify(body);
+    const u = new URL(url);
+    const opts = {
+      hostname: u.hostname, path: u.pathname + (u.search || ''), method: 'PATCH',
+      headers: {
+        'Authorization': `${tokenType} ${token}`,
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData), 'Accept': 'application/json',
+      },
+    };
+    const req = https.request(opts, res => {
+      let data = ''; res.on('data', c => data += c);
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(data); } });
+    });
+    req.on('error', reject); req.write(postData); req.end();
+  });
+}
 
 exports.handler = async (event, context) => {
   // CORS headers
@@ -35,35 +136,34 @@ exports.handler = async (event, context) => {
   }
 
   const INVX_ACCOUNT = process.env.INVX_ACCOUNT || '';
-  // Settrade Open API — ALGO_EQ (Equity), Broker 023 = InnovestX
-  const INVX_BASE = `https://open-api.settrade.com/api/1.0/ALGO_EQ/023/accounts/${INVX_ACCOUNT}`;
-
   if (!INVX_ACCOUNT) {
     return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'INVX_ACCOUNT env var not set' }) };
   }
 
+  // Settrade Open API paths (sdk: settrade_v2/equity.py → InvestorEquity)
+  const STTRADE_HOST = 'https://open-api.settrade.com';
+  const ACCT_BASE    = `${STTRADE_HOST}/api/seos/v3/023/accounts/${INVX_ACCOUNT}`;
+
   try {
-    // ── PING / TEST — tries accounts list to verify API connectivity ──
+    // ── PING / TEST — login + portfolio to verify connectivity ──
     if (action === 'ping') {
-      const base = `https://open-api.settrade.com/api/1.0/ALGO_EQ/023`;
-      const [accounts, portfolio] = await Promise.allSettled([
-        invxGet(base + '/accounts', apiKey, apiSecret),
-        invxGet(base + `/accounts/${INVX_ACCOUNT}/portfolio`, apiKey, apiSecret),
-      ]);
-      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({
-        status: 'ok',
-        accounts_url: base + '/accounts',
-        accounts: accounts.status === 'fulfilled' ? accounts.value : accounts.reason?.message,
-        portfolio_url: base + `/accounts/${INVX_ACCOUNT}/portfolio`,
-        portfolio: portfolio.status === 'fulfilled' ? portfolio.value : portfolio.reason?.message,
-      }) };
+      try {
+        const { token, tokenType } = await settradeLogin(apiKey, apiSecret, '023', 'ALGO_EQ');
+        const port = await authGet(ACCT_BASE + '/portfolios', token, tokenType);
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({
+          status: 'ok', login: 'success', portfolio_url: ACCT_BASE + '/portfolios', portfolio: port,
+        }) };
+      } catch(e) {
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'error', error: e.message }) };
+      }
     }
 
-    // ── DEBUG — shows raw InnovestX response to diagnose field mapping ──
+    // ── DEBUG — shows raw response + normalize result ──
     if (action === 'debug') {
-      const raw = await invxGet(INVX_BASE + '/portfolio', apiKey, apiSecret);
+      const { token, tokenType } = await settradeLogin(apiKey, apiSecret, '023', 'ALGO_EQ');
+      const raw = await authGet(ACCT_BASE + '/portfolios', token, tokenType);
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({
-        url_used: INVX_BASE + '/portfolio',
+        url_used: ACCT_BASE + '/portfolios',
         raw_type: typeof raw,
         raw_is_array: Array.isArray(raw),
         raw_keys: typeof raw === 'object' && raw !== null ? Object.keys(raw) : [],
@@ -76,9 +176,10 @@ exports.handler = async (event, context) => {
 
     // ── GET PORTFOLIO + PRICES ──
     if (action === 'getData') {
+      const { token, tokenType } = await settradeLogin(apiKey, apiSecret, '023', 'ALGO_EQ');
       const [port, orders] = await Promise.allSettled([
-        invxGet(INVX_BASE + '/portfolio', apiKey, apiSecret),
-        invxGet(INVX_BASE + '/orders?status=pending', apiKey, apiSecret),
+        authGet(ACCT_BASE + '/portfolios', token, tokenType),
+        authGet(ACCT_BASE + '/orders', token, tokenType),
       ]);
 
       const rawPort = port.status === 'fulfilled' ? port.value : null;
@@ -113,7 +214,11 @@ exports.handler = async (event, context) => {
 
     // ── CANCEL ORDER ──
     if (action === 'cancel' && orderId) {
-      const res = await invxDelete(INVX_BASE + '/orders/' + orderId, apiKey, apiSecret);
+      const { token, tokenType } = await settradeLogin(apiKey, apiSecret, '023', 'ALGO_EQ');
+      const body = event.body ? JSON.parse(event.body) : {};
+      const pin = body.pin || process.env.INVX_PIN || '';
+      const cancelBody = pin ? { pin: String(pin) } : {};
+      const res = await authPatch(ACCT_BASE + '/orders/' + orderId + '/cancel', token, tokenType, cancelBody);
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'cancelled', data: res }) };
     }
 
@@ -170,12 +275,12 @@ exports.handler = async (event, context) => {
       const pin = body.pin || INVX_PIN;
       if (pin) orderBody.pin = String(pin);
 
-      const orderUrl = INVX_BASE + '/orders';
+      const orderUrl = ACCT_BASE + '/orders';
       console.log('[invx] Placing order to:', orderUrl);
-      console.log('[invx] Order body:', JSON.stringify({ ...orderBody, api_secret: '***', pin: pin ? '***' : undefined }));
+      console.log('[invx] Order body:', JSON.stringify({ ...orderBody, pin: pin ? '***' : undefined }));
 
-      // POST to /equity/{apiKey}/orders — consistent with cancel DELETE /orders/{id}
-      const invxResp = await invxPost(orderUrl, apiKey, apiSecret, orderBody);
+      const { token: orderToken, tokenType: orderTokenType } = await settradeLogin(apiKey, apiSecret, '023', 'ALGO_EQ');
+      const invxResp = await authPost(orderUrl, orderToken, orderTokenType, orderBody);
       const httpStatus = invxResp.statusCode;
       const res = invxResp.body;
       console.log('[invx] InnovestX HTTP status:', httpStatus, 'redirect:', invxResp.location);
@@ -230,70 +335,6 @@ function httpGet(url) {
   });
 }
 
-function invxGet(url, apiKey, apiSecret) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const opts = {
-      hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
-      headers: { 'api-key': apiKey, 'api-secret': apiSecret, 'Accept': 'application/json' },
-    };
-    const req = https.request(opts, res => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(data); } });
-    });
-    req.on('error', reject);
-    req.end();
-  });
-}
-
-function invxPost(url, apiKey, apiSecret, body) {
-  return new Promise((resolve, reject) => {
-    const postData = JSON.stringify(body);
-    const u = new URL(url);
-    const opts = {
-      hostname: u.hostname, path: u.pathname, method: 'POST',
-      headers: {
-        'api-key': apiKey, 'api-secret': apiSecret,
-        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData),
-      },
-    };
-    const req = https.request(opts, res => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        const statusCode = res.statusCode;
-        const location = res.headers?.location || '';
-        try {
-          resolve({ statusCode, location, body: JSON.parse(data) });
-        } catch(e) {
-          resolve({ statusCode, location, body: data });
-        }
-      });
-    });
-    req.on('error', reject);
-    req.write(postData);
-    req.end();
-  });
-}
-
-function invxDelete(url, apiKey, apiSecret) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const opts = {
-      hostname: u.hostname, path: u.pathname, method: 'DELETE',
-      headers: { 'api-key': apiKey, 'api-secret': apiSecret },
-    };
-    const req = https.request(opts, res => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(data); } });
-    });
-    req.on('error', reject);
-    req.end();
-  });
-}
-
 // ── NORMALIZE InnovestX response → Dashboard format ──
 function normalizePortfolio(raw) {
   // Handle all known InnovestX response shapes
@@ -313,9 +354,9 @@ function normalizePortfolio(raw) {
   }
 
   return items.map(p => {
-    const avg = Number(p.avgCost || p.avg_cost || p.AvgCost || p.averageCost || p.costPrice || 0);
-    const mkt = Number(p.lastPrice || p.last || p.Last || p.marketPrice || p.currentPrice || avg);
-    const qty = Number(p.volume || p.quantity || p.Volume || p.availableVolume || p.actualVolume || 0);
+    const avg = Number(p.averagePrice || p.avgCost || p.avg_cost || p.AvgCost || p.averageCost || p.costPrice || 0);
+    const mkt = Number(p.marketPrice || p.lastPrice || p.last || p.Last || p.currentPrice || avg);
+    const qty = Number(p.volume || p.actualVolume || p.quantity || p.Volume || p.availableVolume || 0);
     return {
       sym: p.symbol || p.ticker || p.Symbol || p.stockCode || '',
       qty,

@@ -3,15 +3,31 @@
 // Schedule: 08:30 BKK (01:30 UTC) + 14:30 BKK (07:30 UTC) Mon-Fri
 
 const https = require('https');
+const crypto = require('crypto');
+
+// ── Settrade ECDSA-SHA256 Signer (sdk: settrade_v2/util.py) ───────────────────
+const PKCS8_P256_PREFIX = Buffer.from(
+  '3041020100301306072a8648ce3d020106082a8648ce3d030107042730250201010420', 'hex'
+);
+function signSettrade(appId, appSecret, params = '') {
+  const ts = Date.now().toString();
+  const content = `${appId}.${params}.${ts}`;
+  const rawKey = Buffer.from(appSecret, 'base64');
+  const pkcs8 = Buffer.concat([PKCS8_P256_PREFIX, rawKey]);
+  const priv = crypto.createPrivateKey({ key: pkcs8, format: 'der', type: 'pkcs8' });
+  const sig = crypto.createSign('SHA256');
+  sig.update(content, 'utf8');
+  return { signature: sig.sign(priv, 'hex'), timestamp: ts };
+}
 
 // ── Environment ───────────────────────────────────────────────────────────────
 const INVX_KEY     = process.env.INVX_KEY        || '';
 const INVX_SECRET  = process.env.INVX_SECRET     || '';
 const INVX_PIN     = process.env.INVX_PIN        || '';
 const INVX_ACCOUNT = process.env.INVX_ACCOUNT    || '';
-// Settrade Open API base: ALGO_EQ (Equity), Broker 023 = InnovestX
-const SETTRADE_BASE = `open-api.settrade.com`;
-const SETTRADE_PATH = `/api/1.0/ALGO_EQ/023/accounts/${INVX_ACCOUNT}`;
+// Settrade Open API (sdk: settrade_v2/equity.py → InvestorEquity)
+const SETTRADE_HOST = 'open-api.settrade.com';
+const ACCT_PATH     = `/api/seos/v3/023/accounts/${INVX_ACCOUNT}`;
 const GEMINI_KEY  = process.env.GEMINI_API_KEY  || '';
 const GROQ_KEY    = process.env.GROQ_API_KEY    || '';
 const TG_TOKEN    = process.env.TELEGRAM_TOKEN  || '';
@@ -78,30 +94,54 @@ function httpsRequest(opts, postBody) {
   });
 }
 
+// ── Settrade Open API: login ──────────────────────────────────────────────────
+async function settradeLogin() {
+  if (!INVX_KEY || !INVX_SECRET) throw new Error('INVX_KEY or INVX_SECRET not set');
+  const { signature, timestamp } = signSettrade(INVX_KEY, INVX_SECRET);
+  const loginBody = JSON.stringify({ apiKey: INVX_KEY, params: '', signature, timestamp });
+  const opts = {
+    hostname: SETTRADE_HOST,
+    path: `/api/oam/v1/023/broker-apps/ALGO_EQ/login`,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(loginBody), 'Accept': 'application/json' },
+  };
+  const r = await httpsRequest(opts, loginBody);
+  if (r.error) throw new Error('Settrade login error: ' + r.error);
+  let parsed;
+  try { parsed = JSON.parse(r.body); } catch { throw new Error('Settrade login parse error: ' + r.body.slice(0, 200)); }
+  if (!parsed.access_token) throw new Error('Settrade login no token: ' + JSON.stringify(parsed).slice(0, 200));
+  return { token: parsed.access_token, tokenType: parsed.token_type || 'Bearer' };
+}
+
 // ── Settrade Open API: fetch portfolio ───────────────────────────────────────
 async function fetchPortfolio() {
-  if (!INVX_KEY || !INVX_SECRET) throw new Error('INVX_KEY or INVX_SECRET not set');
   if (!INVX_ACCOUNT) throw new Error('INVX_ACCOUNT not set');
+  const { token, tokenType } = await settradeLogin();
   const opts = {
-    hostname: SETTRADE_BASE,
-    path: `${SETTRADE_PATH}/portfolio`,
+    hostname: SETTRADE_HOST,
+    path: `${ACCT_PATH}/portfolios`,
     method: 'GET',
-    headers: { 'api-key': INVX_KEY, 'api-secret': INVX_SECRET, 'Accept': 'application/json' },
+    headers: { 'Authorization': `${tokenType} ${token}`, 'Accept': 'application/json' },
   };
   const r = await httpsRequest(opts);
   if (r.error) throw new Error('Portfolio fetch: ' + r.error);
-  if (r.statusCode !== 200) throw new Error(`Portfolio API ${r.statusCode}: ${r.body.slice(0,300)}`);
+  if (r.statusCode !== 200) throw new Error(`Portfolio API ${r.statusCode}: ${r.body.slice(0, 300)}`);
   try { return JSON.parse(r.body); }
-  catch { throw new Error('Portfolio parse error: ' + r.body.slice(0,200)); }
+  catch { throw new Error('Portfolio parse error: ' + r.body.slice(0, 200)); }
 }
 
 function normalizePortfolio(raw) {
-  const items = Array.isArray(raw) ? raw : (raw?.data?.positions || raw?.positions || raw?.data || []);
+  // Settrade SDK returns array directly (get_portfolios) or wrapped in data
+  const items = Array.isArray(raw) ? raw
+    : (raw?.data?.positions || raw?.positions || raw?.data || raw?.portfolio || []);
   return items.map(p => {
     const sym = p.symbol || p.ticker || p.Symbol || p.stockCode || '';
-    const qty = Number(p.volume || p.quantity || p.Volume || p.availableVolume || 0);
-    const avg = Number(p.avgCost || p.avg_cost || p.AvgCost || p.averageCost || 0);
-    const mkt = Number(p.lastPrice || p.last || p.Last || p.marketPrice || avg);
+    // Settrade: volume = current holding, actualVolume = settleable volume
+    const qty = Number(p.volume || p.actualVolume || p.quantity || p.Volume || p.availableVolume || 0);
+    // Settrade: averagePrice = avg cost
+    const avg = Number(p.averagePrice || p.avgCost || p.avg_cost || p.AvgCost || p.averageCost || 0);
+    // Settrade: marketPrice = current market price
+    const mkt = Number(p.marketPrice || p.lastPrice || p.last || p.Last || avg);
     const pnlPct = avg > 0 ? ((mkt - avg) / avg) * 100 : 0;
     return { sym, qty, avg, mkt, pnlPct, unrealizedPnl: (mkt - avg) * qty };
   }).filter(p => p.sym && p.qty > 0);
@@ -117,28 +157,31 @@ function extractCash(raw) {
 // ── Settrade Open API: place order ───────────────────────────────────────────
 async function placeOrder(ticker, side, quantity, price = 0) {
   if (!INVX_ACCOUNT) return { success: false, error: 'INVX_ACCOUNT not set' };
+  const { token, tokenType } = await settradeLogin();
   const settradeSide = (side || '').toLowerCase().startsWith('b') ? 'Buy' : 'Sell';
   const orderBody = {
+    pin:           String(INVX_PIN || ''),
     symbol:        ticker,
-    side:          settradeSide,            // "Buy" or "Sell"
+    side:          settradeSide,
     priceType:     price > 0 ? 'Limit' : 'ATO',
     validityType:  'Day',
     trusteeIdType: 'Local',
     volume:        quantity,
-    bypassWarning: '',
+    qtyOpen:       0,
+    clientType:    'Individual',
+    bypassWarning: null,
   };
   if (price > 0) orderBody.price = price;
-  if (INVX_PIN) orderBody.pin = String(INVX_PIN);
   const bodyStr = JSON.stringify(orderBody);
-  console.log('[AutoTrader] placeOrder:', JSON.stringify({ ...orderBody, pin: INVX_PIN ? '***' : undefined }));
+  console.log('[AutoTrader] placeOrder:', JSON.stringify({ ...orderBody, pin: '***' }));
   const opts = {
-    hostname: SETTRADE_BASE,
-    path: `${SETTRADE_PATH}/orders`,
+    hostname: SETTRADE_HOST,
+    path: `${ACCT_PATH}/orders`,
     method: 'POST',
     headers: {
+      'Authorization': `${tokenType} ${token}`,
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(bodyStr),
-      'api-key': INVX_KEY, 'api-secret': INVX_SECRET,
       'Accept': 'application/json',
     },
   };
@@ -148,7 +191,7 @@ async function placeOrder(ticker, side, quantity, price = 0) {
   try {
     const parsed = JSON.parse(r.body);
     if (r.statusCode === 200 || r.statusCode === 201) {
-      return { success: true, orderId: parsed?.orderId || parsed?.order_id || parsed?.data?.orderId || 'OK' };
+      return { success: true, orderId: parsed?.orderNo || parsed?.orderId || parsed?.order_id || parsed?.data?.orderId || 'OK' };
     }
     return { success: false, statusCode: r.statusCode, error: parsed?.message || r.body.slice(0, 300) };
   } catch { return { success: false, error: `HTTP ${r.statusCode}: ` + r.body.slice(0, 200) }; }
