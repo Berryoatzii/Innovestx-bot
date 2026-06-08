@@ -260,22 +260,20 @@ exports.handler = async (event, context) => {
       const qty = Number(body.quantity || body.qty || 0);
       const price = Number(body.price || 0);
 
-      // Settrade SDK: body = {k: v for k, v in body.items() if v is not None}
+      // Settrade SDK (settrade_v2/equity.py): place_order fields only
+      // bypassWarning:true required to bypass broker warning gates (Amibroker sample confirms this)
       // Must not send null/undefined/empty fields — causes Java NPE on their backend
+      const pin = body.pin || INVX_PIN;
       const orderBody = {
         symbol:        sym,
         side:          settradeSide,
         priceType:     price > 0 ? 'Limit' : 'ATO',
+        volume:        qty,
         validityType:  'Day',
         trusteeIdType: 'Local',
-        volume:        qty,
-        qtyOpen:       0,
-        clientType:    'Individual',
+        bypassWarning: true,
       };
       if (price > 0) orderBody.price = price;
-
-      // PIN: from request body (user-entered in modal) OR env var (server-side)
-      const pin = body.pin || INVX_PIN;
       if (pin) orderBody.pin = String(pin);
 
       // Remove any null/undefined/empty-string values (matches Python SDK behavior)

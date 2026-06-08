@@ -165,15 +165,15 @@ async function placeOrder(ticker, side, quantity, price = 0) {
   if (!INVX_ACCOUNT) return { success: false, error: 'INVX_ACCOUNT not set' };
   const { token, tokenType } = await settradeLogin();
   const settradeSide = (side || '').toLowerCase().startsWith('b') ? 'Buy' : 'Sell';
+  // SDK fields only (settrade_v2/equity.py); bypassWarning:true required to bypass broker warning gates
   const orderBody = {
     symbol:        ticker,
     side:          settradeSide,
     priceType:     price > 0 ? 'Limit' : 'ATO',
+    volume:        quantity,
     validityType:  'Day',
     trusteeIdType: 'Local',
-    volume:        quantity,
-    qtyOpen:       0,
-    clientType:    'Individual',
+    bypassWarning: true,
   };
   if (price > 0) orderBody.price = price;
   if (INVX_PIN) orderBody.pin = String(INVX_PIN);
@@ -443,7 +443,8 @@ async function runAutoTrader(mode, portfolioOverride = null) {
     if (mode === 'execute') {
       console.log(`[AutoTrader] SELL ${candidate.sym} x${candidate.qty} grade=${candidate.grade} score=${candidate.final_score}`);
       try {
-        const orderResult = await placeOrder(candidate.sym, 'Sell', candidate.qty);
+        // Pass mkt price so it becomes a Limit order (ATO only works during pre-opening auction)
+        const orderResult = await placeOrder(candidate.sym, 'Sell', candidate.qty, candidate.mkt || 0);
         if (orderResult.success) result.orders_placed.push({ ...orderInfo, orderId: orderResult.orderId });
         else result.orders_failed.push({ ...orderInfo, error: orderResult.error });
       } catch (err) {
