@@ -335,44 +335,38 @@ function httpGet(url) {
   });
 }
 
-// ── NORMALIZE InnovestX response → Dashboard format ──
+// ── NORMALIZE Settrade response → Dashboard format ──
 function normalizePortfolio(raw) {
-  // Handle all known InnovestX response shapes
   let items;
-  if (Array.isArray(raw)) {
-    items = raw;
-  } else if (Array.isArray(raw?.data?.positions)) {
-    items = raw.data.positions;
-  } else if (Array.isArray(raw?.data)) {
-    items = raw.data;
-  } else if (Array.isArray(raw?.positions)) {
-    items = raw.positions;
-  } else if (Array.isArray(raw?.portfolio)) {
-    items = raw.portfolio;
-  } else {
-    items = [];
-  }
+  if (Array.isArray(raw))                          items = raw;
+  else if (Array.isArray(raw?.portfolioList))      items = raw.portfolioList;
+  else if (Array.isArray(raw?.data?.portfolioList))items = raw.data.portfolioList;
+  else if (Array.isArray(raw?.data?.positions))    items = raw.data.positions;
+  else if (Array.isArray(raw?.positions))          items = raw.positions;
+  else if (Array.isArray(raw?.data))               items = raw.data;
+  else                                             items = [];
 
-  return items.map(p => {
-    const avg = Number(p.averagePrice || p.avgCost || p.avg_cost || p.AvgCost || p.averageCost || p.costPrice || 0);
-    const mkt = Number(p.marketPrice || p.lastPrice || p.last || p.Last || p.currentPrice || avg);
-    const qty = Number(p.volume || p.actualVolume || p.quantity || p.Volume || p.availableVolume || 0);
-    return {
-      sym: p.symbol || p.ticker || p.Symbol || p.stockCode || '',
-      qty,
-      avg,
-      mkt,
-    };
-  }).filter(p => p.sym && p.qty > 0);
+  return items
+    .filter(p => p.symbol && p.symbol !== 'TOTAL')
+    .map(p => ({
+      sym: p.symbol || '',
+      qty: Number(p.actualVolume || p.currentVolume || p.volume || p.quantity || 0),
+      avg: Number(p.averagePrice || p.avgCost || p.avg_cost || 0),
+      mkt: Number(p.marketPrice  || p.lastPrice  || p.last   || 0),
+    }))
+    .filter(p => p.sym && p.qty > 0);
 }
 
 function extractCash(raw) {
   if (!raw) return 0;
   const d = raw?.data || raw;
-  return Number(
-    d?.cashBalance || d?.cash || d?.availableCash || d?.cashAvailable ||
-    d?.totalCash || d?.free_cash || raw?.cashBalance || 0
-  );
+  // Settrade portfolios response: totalAmount field at root, or TOTAL row in portfolioList
+  const total = d?.totalAmount || d?.cashBalance || d?.cash || d?.availableCash ||
+    d?.totalCash || d?.free_cash || raw?.cashBalance || 0;
+  if (total) return Number(total);
+  // Find TOTAL row
+  const totalRow = (Array.isArray(d?.portfolioList) ? d.portfolioList : []).find(p => p.symbol === 'TOTAL');
+  return totalRow ? Number(totalRow.marketValue || 0) : 0;
 }
 
 function normalizeOrders(raw) {

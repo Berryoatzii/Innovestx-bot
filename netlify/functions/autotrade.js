@@ -131,20 +131,26 @@ async function fetchPortfolio() {
 }
 
 function normalizePortfolio(raw) {
-  // Settrade SDK returns array directly (get_portfolios) or wrapped in data
-  const items = Array.isArray(raw) ? raw
-    : (raw?.data?.positions || raw?.positions || raw?.data || raw?.portfolio || []);
-  return items.map(p => {
-    const sym = p.symbol || p.ticker || p.Symbol || p.stockCode || '';
-    // Settrade: volume = current holding, actualVolume = settleable volume
-    const qty = Number(p.volume || p.actualVolume || p.quantity || p.Volume || p.availableVolume || 0);
-    // Settrade: averagePrice = avg cost
-    const avg = Number(p.averagePrice || p.avgCost || p.avg_cost || p.AvgCost || p.averageCost || 0);
-    // Settrade: marketPrice = current market price
-    const mkt = Number(p.marketPrice || p.lastPrice || p.last || p.Last || avg);
-    const pnlPct = avg > 0 ? ((mkt - avg) / avg) * 100 : 0;
-    return { sym, qty, avg, mkt, pnlPct, unrealizedPnl: (mkt - avg) * qty };
-  }).filter(p => p.sym && p.qty > 0);
+  let items;
+  if (Array.isArray(raw))                           items = raw;
+  else if (Array.isArray(raw?.portfolioList))       items = raw.portfolioList;
+  else if (Array.isArray(raw?.data?.portfolioList)) items = raw.data.portfolioList;
+  else if (Array.isArray(raw?.data?.positions))     items = raw.data.positions;
+  else if (Array.isArray(raw?.positions))           items = raw.positions;
+  else if (Array.isArray(raw?.data))                items = raw.data;
+  else                                              items = [];
+
+  return items
+    .filter(p => p.symbol && p.symbol !== 'TOTAL')
+    .map(p => {
+      const sym = p.symbol || '';
+      const qty = Number(p.actualVolume || p.currentVolume || p.volume || p.quantity || 0);
+      const avg = Number(p.averagePrice || p.avgCost || p.avg_cost || 0);
+      const mkt = Number(p.marketPrice  || p.lastPrice  || p.last   || avg);
+      const pnlPct = avg > 0 ? ((mkt - avg) / avg) * 100 : 0;
+      return { sym, qty, avg, mkt, pnlPct, unrealizedPnl: (mkt - avg) * qty };
+    })
+    .filter(p => p.sym && p.qty > 0);
 }
 
 function extractCash(raw) {
