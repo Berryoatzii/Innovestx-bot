@@ -43,10 +43,20 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    // ── PING / TEST ──
+    // ── PING / TEST — tries accounts list to verify API connectivity ──
     if (action === 'ping') {
-      const res = await invxGet(INVX_BASE + '/portfolio', apiKey, apiSecret);
-      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'ok', data: res }) };
+      const base = `https://open-api.settrade.com/api/1.0/ALGO_EQ/023`;
+      const [accounts, portfolio] = await Promise.allSettled([
+        invxGet(base + '/accounts', apiKey, apiSecret),
+        invxGet(base + `/accounts/${INVX_ACCOUNT}/portfolio`, apiKey, apiSecret),
+      ]);
+      return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({
+        status: 'ok',
+        accounts_url: base + '/accounts',
+        accounts: accounts.status === 'fulfilled' ? accounts.value : accounts.reason?.message,
+        portfolio_url: base + `/accounts/${INVX_ACCOUNT}/portfolio`,
+        portfolio: portfolio.status === 'fulfilled' ? portfolio.value : portfolio.reason?.message,
+      }) };
     }
 
     // ── DEBUG — shows raw InnovestX response to diagnose field mapping ──
