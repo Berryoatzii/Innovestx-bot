@@ -127,33 +127,50 @@ exports.handler = async (event, context) => {
 
     // ── PLACE ORDER ──
     if (event.httpMethod === 'POST' && action === 'order') {
-      // Normalize and sanitize order body — only send fields InnovestX expects
+      const INVX_PIN = process.env.INVX_PIN || '';
+
+      // Normalize side: frontend sends 'SELL'/'BUY', InnovestX expects 'Sell'/'Buy'
       const rawSide = (body.side || 'Sell').toLowerCase();
       const normSide = rawSide.startsWith('b') ? 'Buy' : 'Sell';
+
       const orderBody = {
         ticker:     body.ticker || body.symbol || '',
         side:       normSide,
         quantity:   Number(body.quantity || body.qty || 0),
         order_type: body.order_type || 'MP-MTL',
+        api_secret: apiSecret,  // required by InnovestX in body
       };
-      if (body.pin)                        orderBody.pin   = body.pin;
+      // PIN: from request body (user-entered) OR env var (server-side)
+      const pin = body.pin || INVX_PIN;
+      if (pin) orderBody.pin = pin;
       if (body.price && Number(body.price) > 0) orderBody.price = Number(body.price);
 
-      const res = await invxPost(INVX_BASE + apiKey, apiKey, apiSecret, orderBody);
+      console.log('[invx] Placing order:', JSON.stringify({ ...orderBody, api_secret: '***', pin: pin ? '***' : undefined }));
 
-      // Detect InnovestX success vs failure from response body
+      const res = await invxPost(INVX_BASE + apiKey, apiKey, apiSecret, orderBody);
+      console.log('[invx] InnovestX response:', JSON.stringify(res));
+
+      // Detect success — InnovestX may return orderId / orderNo / data.orderId
       const isSuccess =
         !!(res?.orderId || res?.order_id || res?.orderNo ||
            res?.data?.orderId || res?.data?.order_id ||
            res?.status === 'success' || res?.success === true);
-      const invxErr = res?.message || res?.error || res?.detail || '';
-      const statusCode = isSuccess ? 200 : 400;
 
-      return { statusCode, headers: corsHeaders, body: JSON.stringify({
-        ...res,
-        _success:  isSuccess,
-        _error_msg: isSuccess ? '' : (invxErr || 'InnovestX ไม่ยืนยัน Order'),
-      }) };
+      // Extract best error message from response
+      const invxErr = res?.message || res?.error || res?.detail || res?.errorMessage ||
+        (typeof res === 'string' ? res.slice(0, 200) : '') ||
+        JSON.stringify(res).slice(0, 200);
+
+      return {
+        statusCode: isSuccess ? 200 : 400,
+        headers: corsHeaders,
+        body: JSON.stringify({
+          ...res,
+          _success:   isSuccess,
+          _error_msg: isSuccess ? '' : invxErr,
+          _raw:       res,  // always include raw response for debugging
+        }),
+      };
     }
 
     return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Unknown action: ' + action }) };

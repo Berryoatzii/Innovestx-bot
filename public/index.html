@@ -563,12 +563,13 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
     <!-- Order detail (sym / side / P&L) -->
     <div class="od" id="orderDetail"></div>
 
-    <!-- Editable qty + price -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    <!-- Editable qty + price + PIN -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div>
         <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:5px">จำนวนหุ้น (Volume)</div>
         <input id="orderQtyInp" type="number" min="1" step="100"
-          style="width:100%;background:rgba(3,5,8,.9);border:1px solid rgba(255,193,7,.35);border-radius:6px;padding:8px 12px;color:#d0daf0;font-family:'Share Tech Mono',monospace;font-size:16px;outline:none;font-weight:bold"/>
+          style="width:100%;background:rgba(3,5,8,.9);border:1px solid rgba(255,193,7,.35);border-radius:6px;padding:8px 12px;color:#d0daf0;font-family:'Share Tech Mono',monospace;font-size:16px;outline:none;font-weight:bold"
+          oninput="updateOrderSummary()"/>
       </div>
       <div>
         <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:5px">ราคา (0 = Market Order)</div>
@@ -576,6 +577,14 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
           style="width:100%;background:rgba(3,5,8,.9);border:1px solid rgba(255,193,7,.35);border-radius:6px;padding:8px 12px;color:#d0daf0;font-family:'Share Tech Mono',monospace;font-size:16px;outline:none;font-weight:bold"
           oninput="updateOrderSummary()"/>
       </div>
+    </div>
+    <!-- PIN field -->
+    <div style="margin-bottom:12px">
+      <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:5px">
+        🔒 Trading PIN <span style="color:#546e7a">(ถ้าตั้ง INVX_PIN ใน Netlify แล้ว ไม่ต้องกรอก)</span>
+      </div>
+      <input id="orderPinInp" type="password" maxlength="10" placeholder="PIN ของ InnovestX"
+        style="width:100%;background:rgba(3,5,8,.9);border:1px solid rgba(255,193,7,.2);border-radius:6px;padding:8px 12px;color:#d0daf0;font-family:'Share Tech Mono',monospace;font-size:16px;outline:none;letter-spacing:4px"/>
     </div>
     <div id="orderSummaryLine" style="font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--dim);margin-bottom:4px;text-align:center"></div>
     <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:12px;text-align:center">
@@ -1221,21 +1230,23 @@ async function executeOrder(){
     return;
   }
   try{
+    const pinVal = document.getElementById('orderPinInp')?.value?.trim() || '';
     const body = {
       ticker:     o.sym,
-      side:       o.side,   // invx.js will normalize to 'Buy'/'Sell'
+      side:       o.side,
       quantity:   o.qty,
       order_type: 'MP-MTL',
       price:      editedPrice > 0 ? editedPrice : 0,
     };
-    const res  = await originalFetch('/api/invx?action=order', {
+    if (pinVal) body.pin = pinVal;
+
+    const res = await originalFetch('/api/invx?action=order', {
       method: 'POST',
       headers: { 'Content-Type':'application/json', 'api-key': window._apiKey||'', 'api-secret': window._apiSecret||'' },
       body: JSON.stringify(body),
     });
     const data = await res.json();
 
-    // invx.js returns 200 for success, 400 for InnovestX rejection
     if(res.ok && data._success !== false){
       const orderId = data.orderId || data.order_id || data.orderNo || data.data?.orderId || '—';
       addLog('ok', '✅ '+o.side+' '+o.sym+' '+o.qty.toLocaleString()+'หุ้น @฿'+o.price+' | OrderID: '+orderId);
@@ -1247,9 +1258,13 @@ async function executeOrder(){
       }
       renderPort();
     } else {
-      const errMsg = data._error_msg || data.message || data.error || JSON.stringify(data).slice(0,120);
-      addLog('err', '❌ Order ไม่สำเร็จ: '+errMsg);
-      showToast('InnovestX ปฏิเสธ Order: '+errMsg, 'err');
+      // Show actual InnovestX error message
+      const rawResp = data._raw || data;
+      const errMsg = data._error_msg || data.message || data.error ||
+        JSON.stringify(rawResp).slice(0, 250);
+      addLog('err', '❌ InnovestX: '+errMsg);
+      showToast('❌ '+errMsg, 'err');
+      console.error('[Order] Raw InnovestX:', rawResp);
     }
   }catch(err){
     addLog('err','Network error: '+err.message);
