@@ -155,7 +155,8 @@ exports.handler = async (event, context) => {
 
       console.log('[invx] Placing order:', JSON.stringify({ ...orderBody, api_secret: '***', pin: pin ? '***' : undefined }));
 
-      const res = await invxPost(INVX_BASE + apiKey, apiKey, apiSecret, orderBody);
+      // POST to /equity/{apiKey}/orders — consistent with cancel DELETE /orders/{id}
+      const res = await invxPost(INVX_BASE + apiKey + '/orders', apiKey, apiSecret, orderBody);
       console.log('[invx] InnovestX response:', JSON.stringify(res));
 
       // Detect success — InnovestX may return orderId / orderNo / data.orderId

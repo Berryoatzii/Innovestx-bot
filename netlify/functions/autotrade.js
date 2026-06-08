@@ -124,7 +124,7 @@ async function placeOrder(ticker, side, quantity) {
   const bodyStr = JSON.stringify(orderBody);
   const opts = {
     hostname: 'trade.innovestx.co.th',
-    path: `/api/api-portal/v1/equity/${INVX_KEY}`,
+    path: `/api/api-portal/v1/equity/${INVX_KEY}/orders`,
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
