@@ -222,28 +222,29 @@ exports.handler = async (event, context) => {
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'cancelled', data: res }) };
     }
 
-    // ── STOCK QUOTE (Settrade) ──
+    // ── STOCK QUOTE (Settrade Market API — authenticated) ──
     if (action === 'quote') {
       const sym = (event.queryStringParameters?.sym || '').toUpperCase().trim();
       if (!sym) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Missing sym' }) };
       try {
-        const raw = await httpGet(`https://api.settrade.com/api/quotes/stocks?symbol=${sym}`);
-        const parsed = JSON.parse(raw);
-        const s = (parsed.stocks || [])[0] || {};
+        const { token, tokenType } = await settradeLogin(apiKey, apiSecret, '023', 'ALGO_EQ');
+        // sdk: marketapi.settrade.com/api/marketdata/v3/{brokerId}/quote/{symbol}
+        const s = await authGet(`https://marketapi.settrade.com/api/marketdata/v3/023/quote/${sym}`, token, tokenType);
         return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({
           sym,
-          last:   Number(s.last   || s.Last   || 0),
+          last:   Number(s.last   || s.Last   || s.prior  || 0),
           high:   Number(s.high   || s.High   || s.dailyHigh  || 0),
           low:    Number(s.low    || s.Low    || s.dailyLow   || 0),
           bid:    Number(s.bid    || s.Bid    || s.bestBid    || 0),
           ask:    Number(s.ask    || s.Ask    || s.offer      || s.bestOffer || 0),
           prior:  Number(s.prior  || 0),
           change: Number(s.change || s.priceChange || 0),
-          pct:    Number(s.percentChange || s.changePct || 0),
+          pct:    Number(s.percentChange || s.changePct || s.pctChange || 0),
           volume: Number(s.volume || s.totalVolume || 0),
+          _raw: s,
         }) };
       } catch(e) {
-        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ sym, last: 0, error: 'unavailable' }) };
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ sym, last: 0, error: e.message }) };
       }
     }
 
