@@ -34,19 +34,26 @@ exports.handler = async (event, context) => {
     };
   }
 
-  const INVX_BASE = 'https://trade.innovestx.co.th/api/api-portal/v1/equity/';
+  const INVX_ACCOUNT = process.env.INVX_ACCOUNT || '';
+  // Settrade Open API — ALGO_EQ (Equity), Broker 023 = InnovestX
+  const INVX_BASE = `https://open-api.settrade.com/api/1.0/ALGO_EQ/023/accounts/${INVX_ACCOUNT}`;
+
+  if (!INVX_ACCOUNT) {
+    return { statusCode: 500, headers: corsHeaders, body: JSON.stringify({ error: 'INVX_ACCOUNT env var not set' }) };
+  }
 
   try {
     // ── PING / TEST ──
     if (action === 'ping') {
-      const res = await invxGet(INVX_BASE + apiKey + '/portfolio', apiKey, apiSecret);
+      const res = await invxGet(INVX_BASE + '/portfolio', apiKey, apiSecret);
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'ok', data: res }) };
     }
 
     // ── DEBUG — shows raw InnovestX response to diagnose field mapping ──
     if (action === 'debug') {
-      const raw = await invxGet(INVX_BASE + apiKey + '/portfolio', apiKey, apiSecret);
+      const raw = await invxGet(INVX_BASE + '/portfolio', apiKey, apiSecret);
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({
+        url_used: INVX_BASE + '/portfolio',
         raw_type: typeof raw,
         raw_is_array: Array.isArray(raw),
         raw_keys: typeof raw === 'object' && raw !== null ? Object.keys(raw) : [],
@@ -60,8 +67,8 @@ exports.handler = async (event, context) => {
     // ── GET PORTFOLIO + PRICES ──
     if (action === 'getData') {
       const [port, orders] = await Promise.allSettled([
-        invxGet(INVX_BASE + apiKey + '/portfolio', apiKey, apiSecret),
-        invxGet(INVX_BASE + apiKey + '/orders?status=pending', apiKey, apiSecret),
+        invxGet(INVX_BASE + '/portfolio', apiKey, apiSecret),
+        invxGet(INVX_BASE + '/orders?status=pending', apiKey, apiSecret),
       ]);
 
       const rawPort = port.status === 'fulfilled' ? port.value : null;
@@ -96,7 +103,7 @@ exports.handler = async (event, context) => {
 
     // ── CANCEL ORDER ──
     if (action === 'cancel' && orderId) {
-      const res = await invxDelete(INVX_BASE + apiKey + '/orders/' + orderId, apiKey, apiSecret);
+      const res = await invxDelete(INVX_BASE + '/orders/' + orderId, apiKey, apiSecret);
       return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ status: 'cancelled', data: res }) };
     }
 
@@ -129,23 +136,23 @@ exports.handler = async (event, context) => {
     if (event.httpMethod === 'POST' && action === 'order') {
       const INVX_PIN = process.env.INVX_PIN || '';
 
-      // InnovestX uses 'B'/'S' — inferred from normalizeOrders() which reads their response side field
+      // Settrade Open API uses "Buy"/"Sell" and specific field names
       const rawSide = (body.side || 'Sell').toLowerCase();
-      const invxSide = rawSide.startsWith('b') ? 'B' : 'S';
+      const settradeSide = rawSide.startsWith('b') ? 'Buy' : 'Sell';
 
       const sym = body.ticker || body.symbol || '';
       const qty = Number(body.quantity || body.qty || 0);
       const price = Number(body.price || 0);
 
-      // Send both naming conventions — InnovestX will use whichever it recognises
+      // Settrade Open API order body (from official SDK docs)
       const orderBody = {
-        symbol:     sym,       // InnovestX standard field (from their response schema)
-        ticker:     sym,       // alternate alias
-        side:       invxSide,  // 'B' or 'S'
-        volume:     qty,       // InnovestX standard field
-        quantity:   qty,       // alternate alias
-        order_type: body.order_type || 'MP-MTL',
-        api_secret: apiSecret,
+        symbol:         sym,
+        side:           settradeSide,   // "Buy" or "Sell"
+        priceType:      price > 0 ? 'Limit' : 'ATO',
+        validityType:   'Day',
+        trusteeIdType:  'Local',
+        volume:         qty,
+        bypassWarning:  '',
       };
       if (price > 0) orderBody.price = price;
 
@@ -153,7 +160,7 @@ exports.handler = async (event, context) => {
       const pin = body.pin || INVX_PIN;
       if (pin) orderBody.pin = String(pin);
 
-      const orderUrl = INVX_BASE + apiKey + '/orders';
+      const orderUrl = INVX_BASE + '/orders';
       console.log('[invx] Placing order to:', orderUrl);
       console.log('[invx] Order body:', JSON.stringify({ ...orderBody, api_secret: '***', pin: pin ? '***' : undefined }));
 

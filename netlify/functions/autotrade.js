@@ -5,9 +5,13 @@
 const https = require('https');
 
 // ── Environment ───────────────────────────────────────────────────────────────
-const INVX_KEY    = process.env.INVX_KEY        || '';
-const INVX_SECRET = process.env.INVX_SECRET     || '';
-const INVX_PIN    = process.env.INVX_PIN        || '';
+const INVX_KEY     = process.env.INVX_KEY        || '';
+const INVX_SECRET  = process.env.INVX_SECRET     || '';
+const INVX_PIN     = process.env.INVX_PIN        || '';
+const INVX_ACCOUNT = process.env.INVX_ACCOUNT    || '';
+// Settrade Open API base: ALGO_EQ (Equity), Broker 023 = InnovestX
+const SETTRADE_BASE = `open-api.settrade.com`;
+const SETTRADE_PATH = `/api/1.0/ALGO_EQ/023/accounts/${INVX_ACCOUNT}`;
 const GEMINI_KEY  = process.env.GEMINI_API_KEY  || '';
 const GROQ_KEY    = process.env.GROQ_API_KEY    || '';
 const TG_TOKEN    = process.env.TELEGRAM_TOKEN  || '';
@@ -74,18 +78,19 @@ function httpsRequest(opts, postBody) {
   });
 }
 
-// ── InnovestX: fetch portfolio ────────────────────────────────────────────────
+// ── Settrade Open API: fetch portfolio ───────────────────────────────────────
 async function fetchPortfolio() {
   if (!INVX_KEY || !INVX_SECRET) throw new Error('INVX_KEY or INVX_SECRET not set');
+  if (!INVX_ACCOUNT) throw new Error('INVX_ACCOUNT not set');
   const opts = {
-    hostname: 'trade.innovestx.co.th',
-    path: `/api/api-portal/v1/equity/${INVX_KEY}/portfolio`,
+    hostname: SETTRADE_BASE,
+    path: `${SETTRADE_PATH}/portfolio`,
     method: 'GET',
-    headers: { 'api-key': INVX_KEY, 'api-secret': INVX_SECRET },
+    headers: { 'api-key': INVX_KEY, 'api-secret': INVX_SECRET, 'Accept': 'application/json' },
   };
   const r = await httpsRequest(opts);
   if (r.error) throw new Error('Portfolio fetch: ' + r.error);
-  if (r.statusCode !== 200) throw new Error(`Portfolio API ${r.statusCode}: ${r.body.slice(0,200)}`);
+  if (r.statusCode !== 200) throw new Error(`Portfolio API ${r.statusCode}: ${r.body.slice(0,300)}`);
   try { return JSON.parse(r.body); }
   catch { throw new Error('Portfolio parse error: ' + r.body.slice(0,200)); }
 }
@@ -109,38 +114,44 @@ function extractCash(raw) {
   } catch { return 0; }
 }
 
-// ── InnovestX: place order ────────────────────────────────────────────────────
-async function placeOrder(ticker, side, quantity) {
-  // InnovestX uses 'B'/'S' and 'symbol'/'volume' based on their response schema
-  const invxSide = (side || '').toLowerCase().startsWith('b') ? 'B' : 'S';
+// ── Settrade Open API: place order ───────────────────────────────────────────
+async function placeOrder(ticker, side, quantity, price = 0) {
+  if (!INVX_ACCOUNT) return { success: false, error: 'INVX_ACCOUNT not set' };
+  const settradeSide = (side || '').toLowerCase().startsWith('b') ? 'Buy' : 'Sell';
   const orderBody = {
-    symbol: ticker, ticker,          // both aliases
-    side: invxSide,                  // 'B' or 'S'
-    volume: quantity, quantity,      // both aliases
-    order_type: 'MP-MTL',
-    api_secret: INVX_SECRET,
+    symbol:        ticker,
+    side:          settradeSide,            // "Buy" or "Sell"
+    priceType:     price > 0 ? 'Limit' : 'ATO',
+    validityType:  'Day',
+    trusteeIdType: 'Local',
+    volume:        quantity,
+    bypassWarning: '',
   };
+  if (price > 0) orderBody.price = price;
   if (INVX_PIN) orderBody.pin = String(INVX_PIN);
   const bodyStr = JSON.stringify(orderBody);
+  console.log('[AutoTrader] placeOrder:', JSON.stringify({ ...orderBody, pin: INVX_PIN ? '***' : undefined }));
   const opts = {
-    hostname: 'trade.innovestx.co.th',
-    path: `/api/api-portal/v1/equity/${INVX_KEY}/orders`,
+    hostname: SETTRADE_BASE,
+    path: `${SETTRADE_PATH}/orders`,
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Content-Length': Buffer.byteLength(bodyStr),
       'api-key': INVX_KEY, 'api-secret': INVX_SECRET,
+      'Accept': 'application/json',
     },
   };
   const r = await httpsRequest(opts, bodyStr);
+  console.log('[AutoTrader] order response HTTP', r.statusCode, ':', r.body?.slice(0, 300));
   if (r.error) return { success: false, error: r.error };
   try {
     const parsed = JSON.parse(r.body);
     if (r.statusCode === 200 || r.statusCode === 201) {
       return { success: true, orderId: parsed?.orderId || parsed?.order_id || parsed?.data?.orderId || 'OK' };
     }
-    return { success: false, statusCode: r.statusCode, error: parsed?.message || r.body.slice(0,200) };
-  } catch { return { success: false, error: 'Parse error: ' + r.body.slice(0,200) }; }
+    return { success: false, statusCode: r.statusCode, error: parsed?.message || r.body.slice(0, 300) };
+  } catch { return { success: false, error: `HTTP ${r.statusCode}: ` + r.body.slice(0, 200) }; }
 }
 
 // ── 7-Layer AI Analysis (calls /api/agents internally via internal function) ──
