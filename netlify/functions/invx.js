@@ -129,21 +129,29 @@ exports.handler = async (event, context) => {
     if (event.httpMethod === 'POST' && action === 'order') {
       const INVX_PIN = process.env.INVX_PIN || '';
 
-      // Normalize side: frontend sends 'SELL'/'BUY', InnovestX expects 'Sell'/'Buy'
+      // InnovestX uses 'B'/'S' — inferred from normalizeOrders() which reads their response side field
       const rawSide = (body.side || 'Sell').toLowerCase();
-      const normSide = rawSide.startsWith('b') ? 'Buy' : 'Sell';
+      const invxSide = rawSide.startsWith('b') ? 'B' : 'S';
 
+      const sym = body.ticker || body.symbol || '';
+      const qty = Number(body.quantity || body.qty || 0);
+      const price = Number(body.price || 0);
+
+      // Send both naming conventions — InnovestX will use whichever it recognises
       const orderBody = {
-        ticker:     body.ticker || body.symbol || '',
-        side:       normSide,
-        quantity:   Number(body.quantity || body.qty || 0),
+        symbol:     sym,       // InnovestX standard field (from their response schema)
+        ticker:     sym,       // alternate alias
+        side:       invxSide,  // 'B' or 'S'
+        volume:     qty,       // InnovestX standard field
+        quantity:   qty,       // alternate alias
         order_type: body.order_type || 'MP-MTL',
-        api_secret: apiSecret,  // required by InnovestX in body
+        api_secret: apiSecret,
       };
-      // PIN: from request body (user-entered) OR env var (server-side)
+      if (price > 0) orderBody.price = price;
+
+      // PIN: from request body (user-entered in modal) OR env var (server-side)
       const pin = body.pin || INVX_PIN;
-      if (pin) orderBody.pin = pin;
-      if (body.price && Number(body.price) > 0) orderBody.price = Number(body.price);
+      if (pin) orderBody.pin = String(pin);
 
       console.log('[invx] Placing order:', JSON.stringify({ ...orderBody, api_secret: '***', pin: pin ? '***' : undefined }));
 

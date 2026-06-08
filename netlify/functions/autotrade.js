@@ -111,8 +111,16 @@ function extractCash(raw) {
 
 // ── InnovestX: place order ────────────────────────────────────────────────────
 async function placeOrder(ticker, side, quantity) {
-  const orderBody = { ticker, side, quantity, order_type: 'MP-MTL', api_secret: INVX_SECRET };
-  if (INVX_PIN) orderBody.pin = INVX_PIN;
+  // InnovestX uses 'B'/'S' and 'symbol'/'volume' based on their response schema
+  const invxSide = (side || '').toLowerCase().startsWith('b') ? 'B' : 'S';
+  const orderBody = {
+    symbol: ticker, ticker,          // both aliases
+    side: invxSide,                  // 'B' or 'S'
+    volume: quantity, quantity,      // both aliases
+    order_type: 'MP-MTL',
+    api_secret: INVX_SECRET,
+  };
+  if (INVX_PIN) orderBody.pin = String(INVX_PIN);
   const bodyStr = JSON.stringify(orderBody);
   const opts = {
     hostname: 'trade.innovestx.co.th',
