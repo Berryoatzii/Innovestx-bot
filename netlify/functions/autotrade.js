@@ -166,7 +166,6 @@ async function placeOrder(ticker, side, quantity, price = 0) {
   const { token, tokenType } = await settradeLogin();
   const settradeSide = (side || '').toLowerCase().startsWith('b') ? 'Buy' : 'Sell';
   const orderBody = {
-    pin:           String(INVX_PIN || ''),
     symbol:        ticker,
     side:          settradeSide,
     priceType:     price > 0 ? 'Limit' : 'ATO',
@@ -175,9 +174,13 @@ async function placeOrder(ticker, side, quantity, price = 0) {
     volume:        quantity,
     qtyOpen:       0,
     clientType:    'Individual',
-    bypassWarning: null,
   };
   if (price > 0) orderBody.price = price;
+  if (INVX_PIN) orderBody.pin = String(INVX_PIN);
+  // Filter out null/undefined/empty (mirrors Python SDK: {k:v for k,v if v is not None})
+  Object.keys(orderBody).forEach(k => {
+    if (orderBody[k] === null || orderBody[k] === undefined || orderBody[k] === '') delete orderBody[k];
+  });
   const bodyStr = JSON.stringify(orderBody);
   console.log('[AutoTrader] placeOrder:', JSON.stringify({ ...orderBody, pin: '***' }));
   const opts = {

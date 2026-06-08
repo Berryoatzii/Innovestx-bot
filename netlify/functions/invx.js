@@ -259,21 +259,28 @@ exports.handler = async (event, context) => {
       const qty = Number(body.quantity || body.qty || 0);
       const price = Number(body.price || 0);
 
-      // Settrade Open API order body (from official SDK docs)
+      // Settrade SDK: body = {k: v for k, v in body.items() if v is not None}
+      // Must not send null/undefined/empty fields — causes Java NPE on their backend
       const orderBody = {
-        symbol:         sym,
-        side:           settradeSide,   // "Buy" or "Sell"
-        priceType:      price > 0 ? 'Limit' : 'ATO',
-        validityType:   'Day',
-        trusteeIdType:  'Local',
-        volume:         qty,
-        bypassWarning:  '',
+        symbol:        sym,
+        side:          settradeSide,
+        priceType:     price > 0 ? 'Limit' : 'ATO',
+        validityType:  'Day',
+        trusteeIdType: 'Local',
+        volume:        qty,
+        qtyOpen:       0,
+        clientType:    'Individual',
       };
       if (price > 0) orderBody.price = price;
 
       // PIN: from request body (user-entered in modal) OR env var (server-side)
       const pin = body.pin || INVX_PIN;
       if (pin) orderBody.pin = String(pin);
+
+      // Remove any null/undefined/empty-string values (matches Python SDK behavior)
+      Object.keys(orderBody).forEach(k => {
+        if (orderBody[k] === null || orderBody[k] === undefined || orderBody[k] === '') delete orderBody[k];
+      });
 
       const orderUrl = ACCT_BASE + '/orders';
       console.log('[invx] Placing order to:', orderUrl);
