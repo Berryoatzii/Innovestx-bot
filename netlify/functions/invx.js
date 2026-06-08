@@ -153,31 +153,39 @@ exports.handler = async (event, context) => {
       const pin = body.pin || INVX_PIN;
       if (pin) orderBody.pin = String(pin);
 
-      console.log('[invx] Placing order:', JSON.stringify({ ...orderBody, api_secret: '***', pin: pin ? '***' : undefined }));
+      const orderUrl = INVX_BASE + apiKey + '/orders';
+      console.log('[invx] Placing order to:', orderUrl);
+      console.log('[invx] Order body:', JSON.stringify({ ...orderBody, api_secret: '***', pin: pin ? '***' : undefined }));
 
       // POST to /equity/{apiKey}/orders — consistent with cancel DELETE /orders/{id}
-      const res = await invxPost(INVX_BASE + apiKey + '/orders', apiKey, apiSecret, orderBody);
-      console.log('[invx] InnovestX response:', JSON.stringify(res));
+      const invxResp = await invxPost(orderUrl, apiKey, apiSecret, orderBody);
+      const httpStatus = invxResp.statusCode;
+      const res = invxResp.body;
+      console.log('[invx] InnovestX HTTP status:', httpStatus, 'redirect:', invxResp.location);
+      console.log('[invx] InnovestX response:', typeof res === 'string' ? res.slice(0, 500) : JSON.stringify(res));
 
       // Detect success — InnovestX may return orderId / orderNo / data.orderId
       const isSuccess =
+        httpStatus >= 200 && httpStatus < 300 &&
         !!(res?.orderId || res?.order_id || res?.orderNo ||
            res?.data?.orderId || res?.data?.order_id ||
            res?.status === 'success' || res?.success === true);
 
       // Extract best error message from response
-      const invxErr = res?.message || res?.error || res?.detail || res?.errorMessage ||
-        (typeof res === 'string' ? res.slice(0, 200) : '') ||
-        JSON.stringify(res).slice(0, 200);
+      const bodyErr = (typeof res === 'object' && res !== null)
+        ? (res.message || res.error || res.detail || res.errorMessage || JSON.stringify(res).slice(0, 300))
+        : (typeof res === 'string' ? res.slice(0, 300) : '');
+      const invxErr = `HTTP ${httpStatus} [${orderUrl}]${invxResp.location ? ' → ' + invxResp.location : ''}: ${bodyErr}`;
 
       return {
         statusCode: isSuccess ? 200 : 400,
         headers: corsHeaders,
         body: JSON.stringify({
-          ...res,
-          _success:   isSuccess,
-          _error_msg: isSuccess ? '' : invxErr,
-          _raw:       res,  // always include raw response for debugging
+          ...(typeof res === 'object' && res !== null ? res : {}),
+          _success:     isSuccess,
+          _http_status: httpStatus,
+          _error_msg:   isSuccess ? '' : invxErr,
+          _raw:         res,
         }),
       };
     }
@@ -236,7 +244,15 @@ function invxPost(url, apiKey, apiSecret, body) {
     const req = https.request(opts, res => {
       let data = '';
       res.on('data', c => data += c);
-      res.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { resolve(data); } });
+      res.on('end', () => {
+        const statusCode = res.statusCode;
+        const location = res.headers?.location || '';
+        try {
+          resolve({ statusCode, location, body: JSON.parse(data) });
+        } catch(e) {
+          resolve({ statusCode, location, body: data });
+        }
+      });
     });
     req.on('error', reject);
     req.write(postData);
