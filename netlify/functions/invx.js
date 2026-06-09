@@ -248,6 +248,49 @@ exports.handler = async (event, context) => {
       }
     }
 
+    // ── CHART OHLCV — Yahoo Finance proxy (no auth needed) ──
+    if (action === 'chart') {
+      const sym = (event.queryStringParameters?.sym || '').toUpperCase().trim();
+      const interval = event.queryStringParameters?.interval || '1d';
+      const range    = event.queryStringParameters?.range    || '1y';
+      if (!sym) return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Missing sym' }) };
+      try {
+        const suffix = sym.includes('.') ? '' : '.BK';
+        const yfUrl  = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}${suffix}?interval=${interval}&range=${range}&includePrePost=false`;
+        const raw = await new Promise((resolve, reject) => {
+          const u = new URL(yfUrl);
+          const req = require('https').request({
+            hostname: u.hostname, path: u.pathname + u.search, method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            },
+          }, res => {
+            let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(d));
+          });
+          req.on('error', reject);
+          req.setTimeout(9000, () => { req.destroy(); reject(new Error('timeout')); });
+          req.end();
+        });
+        const parsed = JSON.parse(raw);
+        const result = parsed.chart?.result?.[0];
+        if (!result) throw new Error('No chart data from Yahoo Finance');
+        const ts = result.timestamp || [];
+        const q  = result.indicators?.quote?.[0] || {};
+        const candles = ts.map((t, i) => ({
+          time:   t,
+          open:   q.open?.[i]   != null ? Math.round(q.open[i]   * 100) / 100 : null,
+          high:   q.high?.[i]   != null ? Math.round(q.high[i]   * 100) / 100 : null,
+          low:    q.low?.[i]    != null ? Math.round(q.low[i]    * 100) / 100 : null,
+          close:  q.close?.[i]  != null ? Math.round(q.close[i]  * 100) / 100 : null,
+          volume: q.volume?.[i] || 0,
+        })).filter(c => c.open != null && c.close != null && c.open > 0);
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ sym, candles, count: candles.length }) };
+      } catch (e) {
+        return { statusCode: 200, headers: corsHeaders, body: JSON.stringify({ sym, candles: [], error: e.message }) };
+      }
+    }
+
     // ── PLACE ORDER ──
     if (event.httpMethod === 'POST' && action === 'order') {
       const INVX_PIN = process.env.INVX_PIN || '';

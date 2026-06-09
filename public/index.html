@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Investment Avengers v8 — AI Council Edition</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&family=Share+Tech+Mono&family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -256,6 +257,53 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:rgba(255,193,7,.2);border-radius:3px}
+/* ── CHART TRADING OVERLAY ── */
+.chart-ov{position:fixed;inset:0;z-index:900;background:var(--dark);display:none;flex-direction:column}
+.chart-ov.open{display:flex}
+.chart-ov-hd{display:flex;align-items:center;gap:10px;padding:8px 16px;background:rgba(0,0,0,.75);border-bottom:2px solid var(--gold);flex-wrap:wrap;flex-shrink:0}
+.ct-title{font-family:'Cinzel',serif;font-size:16px;color:var(--gold);font-weight:bold;white-space:nowrap}
+.ct-sym-inp{background:var(--dark);border:1px solid rgba(255,193,7,.4);color:#d0daf0;font-family:'Share Tech Mono',monospace;font-size:14px;padding:5px 10px;border-radius:6px;width:90px;text-transform:uppercase;outline:none}
+.ct-sym-inp:focus{border-color:var(--gold)}
+.tf-btn{background:none;border:1px solid rgba(255,193,7,.2);color:var(--dim);font-family:'Share Tech Mono',monospace;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer;transition:.15s}
+.tf-btn.act,.tf-btn:hover{border-color:var(--gold);color:var(--gold);background:rgba(255,193,7,.08)}
+.ct-mode-wrap{display:flex;align-items:center;gap:7px;margin-left:auto}
+.ct-sw-label{font-size:11px;color:var(--dim);font-family:'Share Tech Mono',monospace}
+.ct-sw{position:relative;display:inline-block;width:44px;height:22px;flex-shrink:0}
+.ct-sw input{opacity:0;width:0;height:0}
+.ct-sl{position:absolute;inset:0;background:rgba(255,255,255,.08);border-radius:22px;cursor:pointer;transition:.3s;border:1px solid rgba(255,193,7,.15)}
+.ct-sl:before{content:'';position:absolute;width:16px;height:16px;left:3px;top:2px;background:var(--dim);border-radius:50%;transition:.3s}
+.ct-sw input:checked~.ct-sl{background:rgba(0,230,118,.25);border-color:rgba(0,230,118,.4)}
+.ct-sw input:checked~.ct-sl:before{transform:translateX(22px);background:var(--green)}
+.ct-mode-lbl{font-family:'Share Tech Mono',monospace;font-size:11px;font-weight:bold;color:var(--dim);min-width:22px}
+.ct-mode-lbl.on{color:var(--green)}
+.chart-ov-body{display:flex;flex:1;overflow:hidden;min-height:0}
+.chart-main-area{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+#chartCntr{flex:1;min-height:0}
+#volCntr{height:80px;flex-shrink:0;border-top:1px solid rgba(255,193,7,.06)}
+.chart-side{width:215px;flex-shrink:0;border-left:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+.ct-quote-box{padding:14px;border-bottom:1px solid var(--border);flex-shrink:0}
+.ct-q-sym{font-family:'Cinzel',serif;font-size:17px;color:var(--gold);font-weight:bold}
+.ct-q-last{font-family:'Share Tech Mono',monospace;font-size:26px;color:#d0daf0;margin:3px 0}
+.ct-q-chg{font-family:'Share Tech Mono',monospace;font-size:12px;margin-bottom:2px}
+.ct-q-hl{font-size:11px;color:var(--dim)}
+.ct-q-ba{font-size:11px;color:var(--dim);margin-top:3px}
+.ct-trade{padding:12px;display:flex;flex-direction:column;gap:7px;flex:1}
+.ct-trade.locked{opacity:.3;pointer-events:none}
+.ct-trade-ttl{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--gold);font-weight:bold;text-align:center;border-bottom:1px solid rgba(255,193,7,.15);padding-bottom:6px;margin-bottom:2px}
+.ct-lbl{font-size:11px;color:var(--dim);margin-bottom:1px}
+.ct-field{background:rgba(3,5,8,.9);border:1px solid rgba(255,193,7,.2);border-radius:6px;padding:6px 10px;color:#d0daf0;font-size:13px;width:100%;box-sizing:border-box;outline:none}
+.ct-field:focus{border-color:var(--gold)}
+.ct-btns{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:2px}
+.ct-buy{background:rgba(0,230,118,.1);border:1.5px solid var(--green);color:var(--green);font-family:'Share Tech Mono',monospace;font-size:12px;padding:9px 4px;border-radius:7px;cursor:pointer;font-weight:bold;transition:.2s}
+.ct-buy:hover{background:rgba(0,230,118,.25)}
+.ct-sell{background:rgba(255,23,68,.1);border:1.5px solid var(--red);color:var(--red);font-family:'Share Tech Mono',monospace;font-size:12px;padding:9px 4px;border-radius:7px;cursor:pointer;font-weight:bold;transition:.2s}
+.ct-sell:hover{background:rgba(255,23,68,.25)}
+.ct-result{font-size:11px;padding:6px 8px;background:rgba(0,0,0,.3);border-radius:6px;min-height:30px;line-height:1.6;word-break:break-all;margin-top:2px}
+.ct-tip-box{font-size:11px;color:var(--dim);text-align:center;padding:10px 12px;line-height:1.7}
+.ct-open-btn{background:rgba(0,229,255,.07);border:1px solid rgba(0,229,255,.3);color:var(--accent);font-family:'Share Tech Mono',monospace;font-size:11px;padding:4px 10px;border-radius:6px;cursor:pointer;font-weight:bold;transition:.2s;white-space:nowrap}
+.ct-open-btn:hover{background:rgba(0,229,255,.18);border-color:var(--accent)}
+.btn-ch{background:rgba(0,229,255,.07);border:1px solid rgba(0,229,255,.2);color:var(--accent);font-family:'Share Tech Mono',monospace;font-size:10px;padding:2px 6px;border-radius:4px;cursor:pointer}
+.btn-ch:hover{background:rgba(0,229,255,.2)}
 </style>
 </head>
 <body>
@@ -263,6 +311,7 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 <div class="hdr">
   <div class="logo">INVESTMENT AVENGERS <span style="font-family:'Share Tech Mono';font-size:11px;color:var(--dim);margin-left:6px">v7.0</span></div>
   <div class="hdr-r">
+    <button class="ct-open-btn" onclick="ctOpen('')" title="เปิด Chart Trading">📈 Chart</button>
     <span><span class="sd sg"></span>BOT</span>
     <span><span class="sd sr" id="api-dot"></span>INVX</span>
     <span><span class="sd sr" id="ai-dot"></span>AI</span>
@@ -600,6 +649,61 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- ── CHART TRADING OVERLAY ── -->
+<div id="chartOv" class="chart-ov">
+  <div class="chart-ov-hd">
+    <span class="ct-title">📈 Chart Trade</span>
+    <input id="ctSymInp" class="ct-sym-inp" type="text" placeholder="SYMBOL" maxlength="12"
+      onkeydown="if(event.key==='Enter')ctLoadSym()">
+    <button class="api-btn" style="font-size:11px;padding:5px 10px" onclick="ctLoadSym()">ค้นหา</button>
+    <div style="display:flex;gap:4px">
+      <button class="tf-btn act" onclick="ctSetTF(this,'1d','1y')">1D</button>
+      <button class="tf-btn" onclick="ctSetTF(this,'1h','1mo')">1H</button>
+      <button class="tf-btn" onclick="ctSetTF(this,'5m','5d')">5M</button>
+      <button class="tf-btn" onclick="ctSetTF(this,'1wk','2y')">W</button>
+    </div>
+    <div class="ct-mode-wrap">
+      <span class="ct-sw-label">Trading Mode</span>
+      <label class="ct-sw">
+        <input type="checkbox" id="ctModeChk" onchange="ctToggleMode()">
+        <span class="ct-sl"></span>
+      </label>
+      <span id="ctModeLbl" class="ct-mode-lbl">OFF</span>
+    </div>
+    <button class="api-btn" onclick="ctClose()" style="font-size:11px;padding:5px 12px">✕ ปิด</button>
+  </div>
+  <div class="chart-ov-body">
+    <div class="chart-main-area">
+      <div id="chartCntr"></div>
+      <div id="volCntr"></div>
+    </div>
+    <div class="chart-side">
+      <div class="ct-quote-box">
+        <div class="ct-q-sym" id="ctQSym">—</div>
+        <div class="ct-q-last" id="ctQLast">฿ —</div>
+        <div class="ct-q-chg" id="ctQChg"></div>
+        <div class="ct-q-hl" id="ctQHL"></div>
+        <div class="ct-q-ba" id="ctQBA"></div>
+      </div>
+      <div class="ct-trade locked" id="ctTradeBox">
+        <div class="ct-trade-ttl">── ส่งคำสั่ง ──</div>
+        <div class="ct-lbl">จำนวน (หุ้น)</div>
+        <input class="ct-field" id="ctQtyF" type="number" value="100" step="100" min="100">
+        <div class="ct-lbl">ราคา (0 = ATO)</div>
+        <input class="ct-field" id="ctPriceF" type="number" step="0.01" min="0" placeholder="0">
+        <div class="ct-lbl">PIN InnovestX</div>
+        <input class="ct-field" id="ctPinF" type="password" maxlength="10" placeholder="รหัส PIN">
+        <div class="ct-btns">
+          <button class="ct-buy" onclick="ctOrder('Buy')">🟢 ซื้อ</button>
+          <button class="ct-sell" onclick="ctOrder('Sell')">🔴 ขาย</button>
+        </div>
+        <div class="ct-result" id="ctResult"></div>
+      </div>
+      <div class="ct-tip-box" id="ctTipBox">⚠️ เปิด Trading Mode<br>เพื่อซื้อ/ขายผ่านกราฟ<br><br><span style="color:var(--accent);font-size:10px">💡 คลิกที่กราฟเพื่อ<br>ตั้งราคา Limit</span></div>
+    </div>
+  </div>
+</div>
 
 <script>
 // 🟢 ระบบแก้ปัญหา HTTP Cache 🟢
@@ -1036,7 +1140,7 @@ function renderPort(){
       +'<td class="r '+cls+'">'+sgn(pct)+pct.toFixed(1)+'%</td>'
       +'<td class="layer-tooltip" data-tip="'+tip.replace(/"/g,"'")+'">'+(score!=null?scoreBar(score,actionColor):'<span style="color:var(--dim);font-size:11px">กด 7-Layer</span>')+'</td>'
       +'<td style="font-family:monospace;font-size:11px;color:'+actionColor+';font-weight:bold;white-space:nowrap">'+action.replace('_',' ')+'</td>'
-      +'<td style="white-space:nowrap"><button class="btn-s" data-sym="'+p.sym+'" data-qty="'+p.qty+'" data-mkt="'+p.mkt.toFixed(2)+'" data-side="SELL" onclick="prepOrderBtn(this)">ขาย</button> <button class="btn-b" data-sym="'+p.sym+'" data-mkt="'+p.mkt.toFixed(2)+'" data-side="BUY" onclick="prepOrderBtn(this)">DCA</button></td>'
+      +'<td style="white-space:nowrap"><button class="btn-s" data-sym="'+p.sym+'" data-qty="'+p.qty+'" data-mkt="'+p.mkt.toFixed(2)+'" data-side="SELL" onclick="prepOrderBtn(this)">ขาย</button> <button class="btn-b" data-sym="'+p.sym+'" data-mkt="'+p.mkt.toFixed(2)+'" data-side="BUY" onclick="prepOrderBtn(this)">DCA</button> <button class="btn-ch" onclick="ctOpen(\''+p.sym+'\')">📈</button></td>'
       +'</tr>';
   }).join('');
   window._tt={tc,tm,wPnl,lPnl};renderSummary();buildTicker();
@@ -2048,6 +2152,176 @@ function renderAtResult(data, mode) {
 
   el.innerHTML = html;
 }
+
+// ── CHART TRADING ──────────────────────────────────────────────────────────────
+let CT = { lc:null, cs:null, vs:null, em20:null, em50:null, vc:null,
+           sym:'', tf:'1d', range:'1y', trading:false, timer:null };
+
+function ctOpen(sym) {
+  document.getElementById('chartOv').classList.add('open');
+  if (sym) { document.getElementById('ctSymInp').value = sym; ctLoadChart(sym); }
+  else if (CT.sym) ctLoadChart(CT.sym);
+}
+function ctClose() {
+  document.getElementById('chartOv').classList.remove('open');
+  if (CT.timer) { clearInterval(CT.timer); CT.timer = null; }
+}
+function ctSetTF(btn, tf, range) {
+  CT.tf = tf; CT.range = range;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('act'));
+  btn.classList.add('act');
+  if (CT.sym) ctLoadChart(CT.sym);
+}
+function ctLoadSym() {
+  const s = (document.getElementById('ctSymInp').value||'').trim().toUpperCase();
+  if (s) ctLoadChart(s);
+}
+function ctToggleMode() {
+  CT.trading = document.getElementById('ctModeChk').checked;
+  const lbl = document.getElementById('ctModeLbl');
+  lbl.textContent = CT.trading ? 'ON' : 'OFF';
+  lbl.className = 'ct-mode-lbl' + (CT.trading ? ' on' : '');
+  document.getElementById('ctTradeBox').classList.toggle('locked', !CT.trading);
+  document.getElementById('ctTipBox').style.display = CT.trading ? 'none' : 'block';
+}
+
+async function ctLoadChart(sym) {
+  sym = sym.toUpperCase().trim();
+  CT.sym = sym;
+  document.getElementById('ctQSym').textContent = sym;
+  document.getElementById('ctQLast').textContent = '⏳';
+  document.getElementById('ctQChg').textContent = '';
+  document.getElementById('ctSymInp').value = sym;
+  const hdr = { 'api-key': window._apiKey||'', 'api-secret': window._apiSecret||'' };
+  try {
+    const resp = await originalFetch(`/api/invx?action=chart&sym=${sym}&interval=${CT.tf}&range=${CT.range}`, { headers: hdr });
+    const d = await resp.json();
+    ctInitChart();
+    if (d.candles && d.candles.length > 1) {
+      const sorted = d.candles.filter(c=>c.open>0&&c.close>0).sort((a,b)=>a.time-b.time);
+      CT.cs.setData(sorted);
+      CT.vs.setData(sorted.map(c=>({
+        time:c.time, value:c.volume||0,
+        color: c.close>=c.open ? 'rgba(0,230,118,0.35)':'rgba(255,23,68,0.35)',
+      })));
+      const closes = sorted.map(c=>c.close);
+      const e20 = ctCalcEMA(closes,20).map((v,i)=>v!=null?{time:sorted[i].time,value:v}:null).filter(Boolean);
+      const e50 = ctCalcEMA(closes,50).map((v,i)=>v!=null?{time:sorted[i].time,value:v}:null).filter(Boolean);
+      if (e20.length) CT.em20.setData(e20);
+      if (e50.length) CT.em50.setData(e50);
+      CT.lc.timeScale().fitContent();
+      CT.vc.timeScale().fitContent();
+    } else {
+      document.getElementById('ctQLast').textContent = 'ไม่พบข้อมูล';
+    }
+  } catch(e) { console.warn('[Chart]',e.message); }
+  await ctUpdateQuote(sym);
+  if (CT.timer) clearInterval(CT.timer);
+  CT.timer = setInterval(()=>ctUpdateQuote(CT.sym), 20000);
+}
+
+function ctInitChart() {
+  if (CT.lc) return;
+  const ce = document.getElementById('chartCntr');
+  const ve = document.getElementById('volCntr');
+  const base = {
+    layout:{background:{color:'#030508'},textColor:'#8898b0'},
+    grid:{vertLines:{color:'rgba(255,193,7,0.05)'},horzLines:{color:'rgba(255,193,7,0.05)'}},
+    rightPriceScale:{borderColor:'rgba(255,193,7,0.15)'},
+    timeScale:{borderColor:'rgba(255,193,7,0.15)',timeVisible:CT.tf!=='1d'&&CT.tf!=='1wk',secondsVisible:false},
+    handleScroll:true,handleScale:true,
+  };
+  CT.lc = LightweightCharts.createChart(ce,{...base,height:ce.offsetHeight||420});
+  CT.cs = CT.lc.addCandlestickSeries({upColor:'#00e676',downColor:'#ff1744',borderUpColor:'#00e676',borderDownColor:'#ff1744',wickUpColor:'#00e676',wickDownColor:'#ff1744'});
+  CT.em20 = CT.lc.addLineSeries({color:'rgba(0,229,255,0.7)',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+  CT.em50 = CT.lc.addLineSeries({color:'rgba(255,193,7,0.7)',lineWidth:1,priceLineVisible:false,lastValueVisible:false});
+  CT.vc = LightweightCharts.createChart(ve,{...base,height:ve.offsetHeight||80,rightPriceScale:{visible:false},timeScale:{visible:false}});
+  CT.vs = CT.vc.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:''});
+  // Click on chart → auto-fill limit price
+  CT.lc.subscribeCrosshairMove(p=>{
+    const bar = p.seriesData?.get(CT.cs);
+    if (bar?.close) document.getElementById('ctPriceF').value = bar.close.toFixed(2);
+  });
+  // Resize chart when overlay resizes
+  const ro = new ResizeObserver(()=>{
+    if(CT.lc) CT.lc.resize(ce.offsetWidth,ce.offsetHeight||420);
+    if(CT.vc) CT.vc.resize(ve.offsetWidth,ve.offsetHeight||80);
+  });
+  ro.observe(ce); ro.observe(ve);
+}
+
+function ctCalcEMA(arr, period) {
+  const k = 2/(period+1); let ema = null, sum = 0, cnt = 0;
+  return arr.map(v => {
+    if (ema===null) {
+      sum+=v; cnt++;
+      if (cnt>=period) { ema=sum/period; return Math.round(ema*10000)/10000; }
+      return null;
+    }
+    ema = v*k + ema*(1-k);
+    return Math.round(ema*10000)/10000;
+  });
+}
+
+async function ctUpdateQuote(sym) {
+  if (!sym) return;
+  try {
+    const r = await originalFetch(`/api/invx?action=quote&sym=${sym}`,{headers:{'api-key':window._apiKey||'','api-secret':window._apiSecret||''}});
+    const q = await r.json();
+    if (q.last>0) {
+      document.getElementById('ctQLast').textContent = `฿${q.last.toFixed(2)}`;
+      const f = document.getElementById('ctPriceF');
+      if (!f.dataset.userEdited) f.value = q.last.toFixed(2);
+      const sg = q.change>=0?'+':'', co = q.change>=0?'var(--green)':'var(--red)';
+      document.getElementById('ctQChg').innerHTML = `<span style="color:${co}">${sg}${(q.change||0).toFixed(2)} (${sg}${(q.pct||0).toFixed(2)}%)</span>`;
+      document.getElementById('ctQHL').textContent = `H:฿${(q.high||0).toFixed(2)}  L:฿${(q.low||0).toFixed(2)}`;
+      if (q.bid||q.ask) document.getElementById('ctQBA').textContent = `Bid:${q.bid}  Ask:${q.ask}`;
+    }
+  } catch(e){}
+}
+
+async function ctOrder(side) {
+  if (!CT.trading) {
+    document.getElementById('ctResult').innerHTML = '<span style="color:var(--yellow)">⚠️ เปิด Trading Mode ก่อน</span>';
+    return;
+  }
+  const sym = CT.sym; if (!sym) return;
+  const qty = parseInt(document.getElementById('ctQtyF').value)||0;
+  const price = parseFloat(document.getElementById('ctPriceF').value)||0;
+  const pin = document.getElementById('ctPinF').value.trim();
+  if (qty<=0){document.getElementById('ctResult').innerHTML='<span style="color:var(--red)">❌ ใส่จำนวนหุ้น</span>';return;}
+  const ptxt = price>0?`฿${price.toFixed(2)}`:'ราคาตลาด (ATO)';
+  if (!confirm(`${side==='Buy'?'🟢 ซื้อ':'🔴 ขาย'} ${sym} ${qty.toLocaleString()} หุ้น @ ${ptxt} ?`)) return;
+  document.getElementById('ctResult').innerHTML = '<span style="color:var(--dim)">⏳ กำลังส่ง...</span>';
+  const body = {ticker:sym, side, quantity:qty, price};
+  if (pin) body.pin = pin;
+  try {
+    const resp = await originalFetch('/api/invx?action=order',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','api-key':window._apiKey||'','api-secret':window._apiSecret||''},
+      body:JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (data._success) {
+      const oid = data.orderNo||data.orderId||'OK';
+      document.getElementById('ctResult').innerHTML = `<span style="color:var(--green)">✅ ${side==='Buy'?'ซื้อ':'ขาย'} ${sym} ×${qty}<br>Order ID: ${oid}</span>`;
+      addLog('ok',`✅ [Chart] ${side} ${sym} ×${qty} @฿${price||'MKT'} ID:${oid}`);
+      addTransaction(sym,side.toUpperCase(),qty,price);
+      addXP(side==='Sell'?20:10);
+    } else {
+      const e = data._error_msg||JSON.stringify(data._raw||data).slice(0,150);
+      document.getElementById('ctResult').innerHTML = `<span style="color:var(--red)">❌ ${e}</span>`;
+      addLog('err',`[Chart] ${side} ${sym}: ${e}`);
+    }
+  } catch(e) {
+    document.getElementById('ctResult').innerHTML = `<span style="color:var(--red)">❌ ${e.message}</span>`;
+  }
+}
+// Mark price field as user-edited so quote refresh doesn't override it
+document.addEventListener('DOMContentLoaded',()=>{
+  const pf = document.getElementById('ctPriceF');
+  if(pf) pf.addEventListener('input',()=>{ pf.dataset.userEdited='1'; });
+});
 
 </script>
 </body>
