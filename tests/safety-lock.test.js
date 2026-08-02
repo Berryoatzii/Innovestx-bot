@@ -26,6 +26,9 @@ function resetEnv() {
   delete process.env.INVX_PIN;
   delete process.env.INVX_ACCOUNT;
   delete process.env.ALLOWED_ORIGIN;
+  delete process.env.TELEGRAM_TOKEN;
+  delete process.env.TELEGRAM_CHAT_ID;
+  delete process.env.TELEGRAM_PROGRESS_ENABLED;
 }
 
 test.beforeEach(() => {
@@ -48,6 +51,7 @@ test('scheduled handler defaults to dry_run', async () => {
 
   assert.equal(payload.ok, true);
   assert.equal(payload.mode, 'dry_run');
+  assert.equal(typeof payload.runId, 'string');
 });
 
 test('dry_run with supplied portfolio only simulates orders', async () => {
@@ -59,6 +63,20 @@ test('dry_run with supplied portfolio only simulates orders', async () => {
   assert.equal(result.mode, 'dry_run');
   assert.equal(result.orders_placed.length, 1);
   assert.equal(result.orders_placed[0].orderId, 'SIMULATE');
+});
+
+test('shadow signal summary never labels simulated orders as executed', () => {
+  const { _test } = require('../netlify/functions/autotrade');
+  const summary = _test.summarizeSignals({
+    orders_placed: [
+      { orderId: 'SIMULATE', side: 'Sell', sym: 'TEST', qty: 100, mkt: 10 },
+    ],
+    orders_failed: [],
+  });
+
+  assert.equal(summary.actionLabel, 'Shadow Signal');
+  assert.equal(summary.executedCount, 0);
+  assert.equal(summary.simulatedCount, 1);
 });
 
 test('manual trigger fails closed when ADMIN_TOKEN is missing', async () => {
