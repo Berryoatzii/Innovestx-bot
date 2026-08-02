@@ -5,7 +5,9 @@ function clearModules() {
   for (const p of [
     '../netlify/functions/autotrader-trigger',
     '../netlify/functions/autotrade',
+    '../netlify/functions/invx',
     '../netlify/lib/autotrade-engine',
+    '../netlify/lib/invx-engine',
   ]) {
     try { delete require.cache[require.resolve(p)]; } catch {}
   }
@@ -23,6 +25,7 @@ function resetEnv() {
   delete process.env.INVX_SECRET;
   delete process.env.INVX_PIN;
   delete process.env.INVX_ACCOUNT;
+  delete process.env.ALLOWED_ORIGIN;
 }
 
 test.beforeEach(() => {
@@ -102,4 +105,48 @@ test('manual execute remains locked without LIVE_TRADING_ENABLED', async () => {
 
   assert.equal(response.statusCode, 423);
   assert.match(response.body, /Live trading is locked/);
+});
+
+test('direct order endpoint is disabled when ADMIN_TOKEN is missing', async () => {
+  const { handler } = require('../netlify/functions/invx');
+  const response = await handler({
+    httpMethod: 'POST',
+    headers: {},
+    queryStringParameters: { action: 'order' },
+    body: JSON.stringify({ ticker: 'TEST', side: 'Sell', quantity: 100, price: 10 }),
+  });
+
+  assert.equal(response.statusCode, 503);
+  assert.match(response.body, /ADMIN_TOKEN/);
+});
+
+test('direct order endpoint remains locked when live trading is off', async () => {
+  process.env.ADMIN_TOKEN = 'test-admin-token';
+  process.env.EXECUTE_CONFIRMATION = 'confirm-token';
+  clearModules();
+  const { handler } = require('../netlify/functions/invx');
+  const response = await handler({
+    httpMethod: 'POST',
+    headers: {
+      'x-admin-token': 'test-admin-token',
+      'x-execute-confirmation': 'confirm-token',
+    },
+    queryStringParameters: { action: 'order' },
+    body: JSON.stringify({ ticker: 'TEST', side: 'Sell', quantity: 100, price: 10 }),
+  });
+
+  assert.equal(response.statusCode, 423);
+  assert.match(response.body, /Live trading is locked/);
+});
+
+test('cancel endpoint rejects GET before reaching broker', async () => {
+  const { handler } = require('../netlify/functions/invx');
+  const response = await handler({
+    httpMethod: 'GET',
+    headers: {},
+    queryStringParameters: { action: 'cancel', id: '123' },
+    body: '',
+  });
+
+  assert.equal(response.statusCode, 405);
 });
