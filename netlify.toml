@@ -13,16 +13,24 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
 
-# Auto Trader watch cycle — every hour from 09:00 to 16:00 BKK on weekdays.
-# UTC schedule 02:00-09:00. Default mode remains dry_run unless server locks are deliberately enabled.
+# Shadow analysis cycle — every hour from 09:00 to 16:00 BKK on weekdays.
+# This function can create approval intents but cannot execute live orders directly.
 [functions."autotrade"]
   schedule = "0 2-9 * * 1-5"
   node_bundler = "esbuild"
 
-# Multi-agent AI council
+# Secure Telegram webhook for the single authorized approver.
+[functions."telegram"]
+  node_bundler = "esbuild"
+
+# Secure Settrade/InnovestX gateway.
+[functions."invx"]
+  node_bundler = "esbuild"
+
+# Multi-agent AI council (advisory only).
 [functions."agents"]
   node_bundler = "esbuild"
 
-# Manual trigger endpoint — no schedule, HTTP only
+# Manual shadow trigger — no execute mode.
 [functions."autotrader-trigger"]
   node_bundler = "esbuild"
