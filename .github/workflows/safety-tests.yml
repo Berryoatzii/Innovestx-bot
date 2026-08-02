@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - chatgpt/safety-lock-v1
+      - chatgpt/human-approval-v1
 
 permissions:
   contents: read
@@ -13,7 +14,7 @@ permissions:
 jobs:
   safety-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,6 +23,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
 
       - name: Run safety tests
         run: npm test
