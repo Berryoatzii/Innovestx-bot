@@ -1,20 +1,30 @@
-// Safe entry point for scheduled and manual auto-trading.
-// The trading engine lives outside the deployable functions folder.
-// This wrapper owns safety locks and operator visibility.
+// Safe entry point for scheduled analysis.
+// Direct execution is disabled: only approved order intents may reach the broker.
 
 const https = require('https');
 const crypto = require('crypto');
 const { runAutoTrader: runEngine } = require('../lib/autotrade-engine');
+const {
+  initializeBlobContext,
+  calculateProposalQuantity,
+  createIntent,
+} = require('../lib/order-intent-store');
 
-const VALID_MODES = new Set(['analyze', 'dry_run', 'execute']);
-const LIVE_TRADING_ENABLED = process.env.LIVE_TRADING_ENABLED === 'true';
-const SCHEDULED_LIVE_TRADING_ENABLED = process.env.SCHEDULED_LIVE_TRADING_ENABLED === 'true';
+const VALID_MODES = new Set(['analyze', 'dry_run']);
 const TELEGRAM_PROGRESS_ENABLED = process.env.TELEGRAM_PROGRESS_ENABLED !== 'false';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 
 function normalizeMode(mode) {
   return VALID_MODES.has(mode) ? mode : 'dry_run';
+}
+
+function bkkDateParts(date = new Date()) {
+  const shifted = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  return {
+    date: shifted.toISOString().slice(0, 10),
+    hour: String(shifted.getUTCHours()).padStart(2, '0'),
+  };
 }
 
 function bkkTimestamp() {
@@ -25,16 +35,18 @@ function bkkTimestamp() {
   });
 }
 
-function postTelegram(text) {
+function postTelegram(text, keyboard = null) {
   if (!TELEGRAM_PROGRESS_ENABLED || !TG_TOKEN || !TG_CHAT_ID) {
     return Promise.resolve({ sent: false, reason: 'telegram_not_configured' });
   }
 
-  const body = JSON.stringify({
+  const payload = {
     chat_id: TG_CHAT_ID,
     text: String(text).slice(0, 4096),
     disable_web_page_preview: true,
-  });
+  };
+  if (keyboard) payload.reply_markup = { inline_keyboard: keyboard };
+  const body = JSON.stringify(payload);
 
   return new Promise((resolve) => {
     const req = https.request({
@@ -65,80 +77,163 @@ function postTelegram(text) {
   });
 }
 
+function parseCoreSymbols() {
+  return new Set(String(process.env.CORE_SYMBOLS || '')
+    .split(',')
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean));
+}
+
 function summarizeSignals(result) {
   const simulated = (result.orders_placed || []).filter((order) => order.orderId === 'SIMULATE');
-  const executed = (result.orders_placed || []).filter((order) => order.orderId !== 'SIMULATE');
   const failed = result.orders_failed || [];
-
-  const actionSource = executed.length > 0 ? executed : simulated;
-  const actionLabel = executed.length > 0 ? 'ส่งคำสั่งแล้ว' : 'Shadow Signal';
-  const topActions = actionSource.slice(0, 5).map((order) => {
-    const priceText = Number(order.mkt) > 0 ? ` @ ${Number(order.mkt).toFixed(2)}` : '';
-    return `${order.side || 'SELL'} ${order.sym} ${order.qty || 0} หุ้น${priceText}`;
-  });
-
   return {
-    actionLabel,
-    topActions,
-    executedCount: executed.length,
-    simulatedCount: simulated.length,
+    simulated,
     failedCount: failed.length,
   };
 }
 
-async function runAutoTrader(mode = 'dry_run', portfolioOverride = null) {
-  const safeMode = normalizeMode(mode);
+async function createApprovalIntents(result, runId, event) {
+  const maxFraction = Number(process.env.PROPOSAL_MAX_POSITION_FRACTION || 0.25);
+  const maxOrderValue = Number(process.env.PROPOSAL_MAX_ORDER_VALUE || 3000);
+  const boardLot = Number(process.env.PROPOSAL_BOARD_LOT || 100);
+  const ttlMinutes = Number(process.env.ORDER_INTENT_TTL_MINUTES || 45);
+  const coreSymbols = parseCoreSymbols();
+  const { date, hour } = bkkDateParts();
+  const intents = [];
+  const skipped = [];
 
-  // Fail closed: no caller may execute real orders unless the global live lock is enabled.
-  if (safeMode === 'execute' && !LIVE_TRADING_ENABLED) {
-    throw new Error('Live trading is locked: LIVE_TRADING_ENABLED is not true');
+  const simulated = (result.orders_placed || []).filter((order) => order.orderId === 'SIMULATE');
+  for (const order of simulated.slice(0, 5)) {
+    const symbol = String(order.sym || '').toUpperCase();
+    const side = String(order.side || 'SELL').toUpperCase();
+    const price = Number(order.mkt || 0);
+    const portfolioQty = Math.floor(Number(order.qty || 0));
+
+    if (coreSymbols.has(symbol)) {
+      skipped.push({ symbol, reason: 'CORE_PROTECTED' });
+      continue;
+    }
+
+    const quantity = calculateProposalQuantity({
+      positionQty: portfolioQty,
+      price,
+      maxFraction,
+      maxOrderValue,
+      boardLot,
+    });
+
+    if (quantity <= 0) {
+      skipped.push({ symbol, reason: 'PROPOSAL_SIZE_NOT_SAFE' });
+      continue;
+    }
+
+    const idempotencyKey = [
+      date,
+      hour,
+      runId,
+      symbol,
+      side,
+      quantity,
+      'shadow-advisory-v1',
+    ].join('|');
+
+    try {
+      const { intent, created } = await createIntent({
+        idempotencyKey,
+        symbol,
+        side,
+        quantity,
+        proposedPrice: price,
+        portfolioQty,
+        portfolioBucket: 'REVIEW',
+        strategyVersion: 'shadow-advisory-v1',
+        runId,
+        reasonCode: 'AI_ADVISORY_REVIEW',
+        reason: order.reason || `Grade=${order.grade || '-'} Score=${order.final_score || '-'}`,
+        source: 'scheduled-shadow',
+      }, { event, ttlMinutes });
+
+      intents.push(intent);
+
+      if (created) {
+        await postTelegram([
+          `🟠 ORDER PROPOSAL [${intent.id}]`,
+          `ข้อเสนอ: ${intent.side} ${intent.symbol} ${intent.quantity} หุ้น`,
+          `ราคาอ้างอิง: ${Number(intent.proposedPrice).toFixed(2)}`,
+          `มูลค่าโดยประมาณ: ${Number(intent.estimatedValue).toLocaleString('th-TH')} บาท`,
+          `สัดส่วน: ไม่เกิน ${Math.round(maxFraction * 100)}% ของสถานะ และไม่ขายหมด`,
+          `หมดอายุ: ${intent.expiresAt}`,
+          '',
+          `เหตุผล: ${intent.reason || 'รอตรวจสอบ'}`,
+          '',
+          '⚠️ AI เป็นเพียงผู้เสนอ ระบบจะตรวจพอร์ต ราคา สภาพคล่อง วงเงิน และออเดอร์ซ้ำอีกครั้งหลังโอ๊ดกดอนุมัติ',
+        ].join('\n'), [
+          [{ text: `✅ ตรวจและอนุมัติ ${intent.symbol}`, callback_data: `APV:${intent.id}` }],
+          [{ text: `❌ ปฏิเสธ ${intent.symbol}`, callback_data: `REJ:${intent.id}` }],
+        ]);
+      }
+    } catch (error) {
+      skipped.push({ symbol, reason: error.message });
+    }
   }
 
-  // Never trust browser-provided positions for real orders.
-  const safePortfolioOverride = safeMode === 'execute' ? null : portfolioOverride;
-  return runEngine(safeMode, safePortfolioOverride);
+  return { intents, skipped };
 }
 
-exports.handler = async () => {
-  const runId = crypto.randomUUID().slice(0, 8);
-  let mode = normalizeMode(process.env.SCHEDULED_TRADE_MODE || 'dry_run');
+async function runAutoTrader(mode = 'dry_run', portfolioOverride = null) {
+  const safeMode = normalizeMode(mode);
+  // Live orders may only be created by approval-executor from a signed intent.
+  if (String(mode).toLowerCase() === 'execute') {
+    throw new Error('DIRECT_EXECUTE_DISABLED_USE_HUMAN_APPROVAL');
+  }
+  return runEngine(safeMode, portfolioOverride);
+}
 
-  // Scheduled real-money execution needs a second independent server-side lock.
-  if (mode === 'execute' && !SCHEDULED_LIVE_TRADING_ENABLED) {
-    console.warn('[AutoTrader] Scheduled execute requested but locked; falling back to dry_run');
-    mode = 'dry_run';
+exports.handler = async (event = {}) => {
+  await initializeBlobContext(event);
+  const runId = crypto.randomUUID().slice(0, 8);
+  const requested = process.env.SCHEDULED_TRADE_MODE || 'dry_run';
+  const mode = normalizeMode(requested);
+
+  if (String(requested).toLowerCase() === 'execute') {
+    console.warn('[AutoTrader] Scheduled execute is permanently disabled; using dry_run');
   }
 
-  console.log(`[AutoTrader] Safe scheduled run | run=${runId} mode=${mode}`);
-
+  console.log(`[AutoTrader] Scheduled shadow run | run=${runId} mode=${mode}`);
   await postTelegram([
     `🟡 BOT START [${runId}]`,
     `เวลา: ${bkkTimestamp()}`,
     `โหมด: ${mode.toUpperCase()}`,
-    'สถานะ: กำลังดึงพอร์ตและวิเคราะห์สัญญาณ',
-    mode === 'execute' ? '⚠️ โหมดเงินจริง' : '🔒 ไม่มีการส่งคำสั่งเงินจริง',
+    'สถานะ: กำลังดึงพอร์ตและวิเคราะห์ข้อเสนอ',
+    '🔒 ไม่มีการส่งคำสั่งจริงโดยอัตโนมัติ',
   ].join('\n'));
 
   try {
     const result = await runAutoTrader(mode, null);
     const signal = summarizeSignals(result);
+    const approval = await createApprovalIntents(result, runId, event);
+
     const lines = [
       `🟢 BOT DONE [${runId}]`,
       `เวลา: ${bkkTimestamp()}`,
-      `โหมด: ${result.mode.toUpperCase()}`,
       `ตรวจแล้ว: ${(result.analyzed || []).length} หุ้น`,
-      `${signal.actionLabel}: ${signal.executedCount + signal.simulatedCount} รายการ`,
-      `ผิดพลาด: ${signal.failedCount} รายการ`,
+      `Shadow signals: ${signal.simulated.length} รายการ`,
+      `ส่งให้อนุมัติ: ${approval.intents.length} รายการ`,
+      `ข้ามเพราะ Safety Gate: ${approval.skipped.length} รายการ`,
+      `ผิดพลาดจาก Engine: ${signal.failedCount} รายการ`,
     ];
 
-    if (signal.topActions.length > 0) {
-      lines.push('', ...signal.topActions.map((item) => `• ${item}`));
+    if (approval.intents.length === 0) {
+      lines.push('', '• รอบนี้ไม่มีข้อเสนอที่ผ่านเกณฑ์ขนาดเบื้องต้น');
     } else {
-      lines.push('', '• รอบนี้ยังไม่มีสัญญาณที่ผ่านเกณฑ์');
+      lines.push('', ...approval.intents.map((item) =>
+        `• รออนุมัติ ${item.side} ${item.symbol} ${item.quantity}หุ้น [${item.id}]`
+      ));
     }
 
-    if (result.summary) {
-      lines.push('', `สรุป: ${String(result.summary).slice(0, 1200)}`);
+    if (approval.skipped.length > 0) {
+      lines.push('', ...approval.skipped.slice(0, 5).map((item) => `• ข้าม ${item.symbol}: ${item.reason}`));
     }
 
     await postTelegram(lines.join('\n'));
@@ -152,22 +247,19 @@ exports.handler = async () => {
         mode: result.mode,
         timestamp: result.timestamp,
         analyzed: (result.analyzed || []).length,
-        simulated_or_placed: result.orders_placed.length,
-        failed: result.orders_failed.length,
-        summary: result.summary,
+        shadowSignals: signal.simulated.length,
+        approvalIntentIds: approval.intents.map((item) => item.id),
+        skipped: approval.skipped,
       }),
     };
   } catch (err) {
-    console.error(`[AutoTrader] Safe wrapper failure | run=${runId}:`, err);
-
+    console.error(`[AutoTrader] Shadow wrapper failure | run=${runId}:`, err);
     await postTelegram([
       `🔴 BOT ERROR [${runId}]`,
       `เวลา: ${bkkTimestamp()}`,
-      `โหมด: ${mode.toUpperCase()}`,
       `สาเหตุ: ${err.message}`,
-      'สถานะ: ไม่มีการส่งคำสั่งเพิ่มจากรอบนี้',
+      'สถานะ: ไม่มีการส่งคำสั่งจริงจากรอบนี้',
     ].join('\n'));
-
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
@@ -177,4 +269,4 @@ exports.handler = async () => {
 };
 
 module.exports.runAutoTrader = runAutoTrader;
-module.exports._test = { normalizeMode, summarizeSignals };
+module.exports._test = { normalizeMode, summarizeSignals, bkkDateParts, parseCoreSymbols };
