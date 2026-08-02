@@ -1,11 +1,14 @@
 {
   "name": "innovestx-bot",
-  "version": "8.1.0-safety-lock",
+  "version": "8.2.0-human-approval",
   "private": true,
-  "description": "InnovestX trading bot with fail-closed safety controls",
+  "description": "InnovestX trading assistant with fail-closed human-approved order intents",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:safety": "node --test tests/safety-lock.test.js"
+    "test:safety": "node --test tests/safety-lock.test.js tests/human-approval.test.js"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^10.7.10"
   },
   "engines": {
     "node": ">=18"
