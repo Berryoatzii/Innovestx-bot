@@ -1,0 +1,13 @@
+{
+  "name": "innovestx-bot",
+  "version": "8.1.0-safety-lock",
+  "private": true,
+  "description": "InnovestX trading bot with fail-closed safety controls",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:safety": "node --test tests/safety-lock.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
