@@ -1,6 +1,6 @@
 const basePolicy = require('../../config/portfolio-policy.json');
 
-const VALID_BUCKETS = new Set(['CORE', 'ACTIVE', 'REVIEW']);
+const VALID_POSITION_BUCKETS = new Set(['CORE', 'ACTIVE', 'REVIEW']);
 
 function parseCsv(value) {
   return String(value || '')
@@ -34,9 +34,11 @@ function loadPortfolioPolicy(env = process.env) {
 
   const targetCore = Number(env.CORE_TARGET_WEIGHT);
   const targetActive = Number(env.ACTIVE_TARGET_WEIGHT);
+  const targetCash = Number(env.CASH_TARGET_WEIGHT);
   if (Number.isFinite(targetCore) && targetCore >= 0 && targetCore <= 1) policy.targets.CORE = targetCore;
   if (Number.isFinite(targetActive) && targetActive >= 0 && targetActive <= 1) policy.targets.ACTIVE = targetActive;
-  policy.targets.REVIEW = Math.max(0, 1 - policy.targets.CORE - policy.targets.ACTIVE);
+  if (Number.isFinite(targetCash) && targetCash >= 0 && targetCash <= 1) policy.targets.CASH = targetCash;
+  policy.targets.REVIEW = Math.max(0, 1 - policy.targets.CORE - policy.targets.ACTIVE - policy.targets.CASH);
 
   validatePolicy(policy);
   return policy;
@@ -56,9 +58,13 @@ function validatePolicy(policy) {
     }
   }
 
-  const totalTarget = Number(policy.targets.CORE || 0) + Number(policy.targets.ACTIVE || 0) + Number(policy.targets.REVIEW || 0);
+  const totalTarget =
+    Number(policy.targets.CORE || 0) +
+    Number(policy.targets.ACTIVE || 0) +
+    Number(policy.targets.CASH || 0) +
+    Number(policy.targets.REVIEW || 0);
   if (Math.abs(totalTarget - 1) > 0.000001) throw new Error(`POLICY_TARGETS_MUST_SUM_TO_ONE:${totalTarget}`);
-  if (!VALID_BUCKETS.has(policy.classification.defaultBucket)) throw new Error('POLICY_INVALID_DEFAULT_BUCKET');
+  if (!VALID_POSITION_BUCKETS.has(policy.classification.defaultBucket)) throw new Error('POLICY_INVALID_DEFAULT_BUCKET');
   return true;
 }
 
@@ -89,7 +95,7 @@ function segmentPortfolio(portfolio, policy = loadPortfolioPolicy()) {
 function summarizeAllocation(segmented, cash = 0, policy = loadPortfolioPolicy()) {
   const totals = { CORE: 0, ACTIVE: 0, REVIEW: 0, CASH: Math.max(0, Number(cash || 0)) };
   for (const item of segmented) {
-    if (VALID_BUCKETS.has(item.bucket)) totals[item.bucket] += Number(item.marketValue || 0);
+    if (VALID_POSITION_BUCKETS.has(item.bucket)) totals[item.bucket] += Number(item.marketValue || 0);
   }
   const portfolioValue = totals.CORE + totals.ACTIVE + totals.REVIEW + totals.CASH;
   const weights = {};
@@ -99,20 +105,45 @@ function summarizeAllocation(segmented, cash = 0, policy = loadPortfolioPolicy()
   const violations = [];
   if (unclassified.length > 0) violations.push({ code: 'UNCLASSIFIED_REVIEW_POSITIONS', symbols: unclassified });
   if (weights.CORE > policy.targets.CORE + 0.10) violations.push({ code: 'CORE_OVER_TARGET', actual: weights.CORE, target: policy.targets.CORE });
-  if (weights.ACTIVE > policy.targets.ACTIVE + 0.10) violations.push({ code: 'ACTIVE_OVER_TARGET', actual: weights.ACTIVE, target: policy.targets.ACTIVE });
+  if (weights.ACTIVE > policy.targets.ACTIVE + 0.05) violations.push({ code: 'ACTIVE_OVER_TARGET', actual: weights.ACTIVE, target: policy.targets.ACTIVE });
+  if (weights.CASH + 0.000001 < policy.targets.CASH) violations.push({ code: 'CASH_BELOW_TARGET', actual: weights.CASH, target: policy.targets.CASH });
 
   return { totals, weights, portfolioValue, violations };
 }
 
-function orderEligibility({ symbol, action, policy = loadPortfolioPolicy() }) {
+function orderEligibility({ symbol, action, evidence = {}, policy = loadPortfolioPolicy() }) {
   const bucket = classifySymbol(symbol, policy);
   const normalizedAction = String(action || '').toUpperCase();
+
   if (bucket === 'REVIEW') return { eligible: false, bucket, reason: 'REVIEW_BUCKET_NO_ORDERS' };
-  if (bucket === 'CORE' && normalizedAction.includes('SELL')) {
-    return { eligible: false, bucket, reason: 'CORE_SELL_REQUIRES_MANUAL_THESIS_BREAK' };
+
+  if (bucket === 'CORE') {
+    if (normalizedAction.includes('SELL')) {
+      return { eligible: false, bucket, reason: 'CORE_SELL_REQUIRES_MANUAL_THESIS_BREAK' };
+    }
+    const required = [
+      ['fundamentalPassed', 'CORE_FUNDAMENTAL_GATE_FAILED'],
+      ['thesisApproved', 'CORE_THESIS_NOT_APPROVED'],
+      ['valuationPassed', 'CORE_VALUATION_GATE_FAILED'],
+      ['corporateActionClear', 'CORE_CORPORATE_ACTION_UNCLEAR'],
+      ['cashReserveMaintained', 'CORE_CASH_RESERVE_BREACH'],
+    ];
+    const failed = required.find(([key]) => evidence[key] !== true);
+    if (failed) return { eligible: false, bucket, reason: failed[1] };
+    if (!['CORE_BUY_CANDIDATE', 'CORE_ADD_CANDIDATE'].includes(normalizedAction)) {
+      return { eligible: false, bucket, reason: 'CORE_ACTION_NOT_SUPPORTED' };
+    }
+    return { eligible: true, bucket, reason: 'CORE_EVIDENCE_APPROVED' };
   }
-  if (bucket !== 'ACTIVE') return { eligible: false, bucket, reason: 'RULES_STRATEGY_ACTIVE_ONLY' };
-  return { eligible: true, bucket, reason: 'ACTIVE_RULES_ELIGIBLE' };
+
+  if (bucket === 'ACTIVE') {
+    if (evidence.rulesPassed !== true) return { eligible: false, bucket, reason: 'ACTIVE_RULES_GATE_FAILED' };
+    if (evidence.corporateActionClear !== true) return { eligible: false, bucket, reason: 'ACTIVE_CORPORATE_ACTION_UNCLEAR' };
+    if (evidence.cashReserveMaintained !== true) return { eligible: false, bucket, reason: 'ACTIVE_CASH_RESERVE_BREACH' };
+    return { eligible: true, bucket, reason: 'ACTIVE_RULES_ELIGIBLE' };
+  }
+
+  return { eligible: false, bucket, reason: 'UNKNOWN_BUCKET' };
 }
 
 module.exports = {
