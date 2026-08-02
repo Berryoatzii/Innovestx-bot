@@ -66,7 +66,6 @@ function calculateProposalQuantity({
   const byValue = Math.floor((maxValue / px) / lot) * lot;
   const qty = Math.min(byFraction, byValue);
 
-  // Human-approval pilot never proposes a full-position exit.
   if (qty < lot || qty >= held) return 0;
   return qty;
 }
@@ -164,8 +163,9 @@ const ALLOWED_TRANSITIONS = {
   PENDING_APPROVAL: new Set(['APPROVING', 'REJECTED', 'EXPIRED']),
   APPROVING: new Set(['PENDING_APPROVAL', 'FAILED_PRECHECK', 'SUBMITTED', 'EXECUTION_UNCERTAIN']),
   SUBMITTED: new Set(['ACKNOWLEDGED', 'RECONCILE_PENDING', 'EXECUTION_UNCERTAIN']),
-  RECONCILE_PENDING: new Set(['ACKNOWLEDGED', 'PARTIALLY_FILLED', 'FILLED', 'REJECTED_BY_BROKER', 'CANCELLED']),
-  ACKNOWLEDGED: new Set(['PARTIALLY_FILLED', 'FILLED', 'REJECTED_BY_BROKER', 'CANCELLED']),
+  RECONCILE_PENDING: new Set(['ACKNOWLEDGED', 'PARTIALLY_FILLED', 'FILLED', 'REJECTED_BY_BROKER', 'CANCELLED', 'EXECUTION_UNCERTAIN']),
+  ACKNOWLEDGED: new Set(['RECONCILE_PENDING', 'PARTIALLY_FILLED', 'FILLED', 'REJECTED_BY_BROKER', 'CANCELLED', 'EXECUTION_UNCERTAIN']),
+  PARTIALLY_FILLED: new Set(['RECONCILE_PENDING', 'FILLED', 'CANCELLED', 'REJECTED_BY_BROKER', 'EXECUTION_UNCERTAIN']),
 };
 
 function canTransition(from, to) {
