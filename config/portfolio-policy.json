@@ -1,9 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "targets": {
     "CORE": 0.60,
-    "ACTIVE": 0.40,
+    "ACTIVE": 0.20,
+    "CASH": 0.20,
     "REVIEW": 0.00
+  },
+  "interpretation": {
+    "core": "Quality-Dividend-Value holdings for multi-year ownership",
+    "active": "Swing positions held for days to months",
+    "cash": "Tactical reserve inside the former 40% active sleeve; not forced into trades"
   },
   "classification": {
     "defaultBucket": "REVIEW",
@@ -12,15 +18,30 @@
     "reviewSymbols": []
   },
   "core": {
-    "maxPositionWeight": 0.15,
+    "maxPositionWeight": 0.12,
+    "maxSectorWeight": 0.30,
     "allowIntradaySell": false,
-    "sellAuthority": "THESIS_BREAK_MANUAL_REVIEW_ONLY"
+    "sellAuthority": "THESIS_BREAK_MANUAL_REVIEW_ONLY",
+    "strategy": "QUALITY_DIVIDEND_VALUE_V1",
+    "minimumHoldingIntentYears": 5,
+    "averaging": {
+      "automaticOnPriceDecline": false,
+      "maximumAdditionalTranches": 2,
+      "requiresFreshFundamentals": true,
+      "requiresThesisReconfirmation": true,
+      "requiresValuationMarginOfSafety": true
+    }
   },
   "active": {
-    "maxPositionWeight": 0.10,
+    "maxPositionWeight": 0.05,
     "maxPositions": 4,
     "riskPerTradePct": 0.005,
-    "strategy": "MOMENTUM_BREAKOUT_V1"
+    "strategy": "MOMENTUM_BREAKOUT_V1",
+    "forcedDailyTrading": false
+  },
+  "cash": {
+    "minimumTargetWeight": 0.20,
+    "purpose": "Liquidity, second-tranche capacity, and no-trade option"
   },
   "review": {
     "allowOrders": false
@@ -53,6 +74,7 @@
     "missingData": "NO_TRADE",
     "staleData": "NO_TRADE",
     "corporateActionUnknown": "NO_TRADE",
-    "holidayCalendarUnknown": "NO_TRADE"
+    "holidayCalendarUnknown": "NO_TRADE",
+    "missingThesisCard": "NO_TRADE"
   }
 }
