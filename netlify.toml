@@ -13,9 +13,10 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
 
-# Auto Trader — runs at 08:30 BKK (01:30 UTC) and 14:30 BKK (07:30 UTC) on weekdays
+# Auto Trader watch cycle — every hour from 09:00 to 16:00 BKK on weekdays.
+# UTC schedule 02:00-09:00. Default mode remains dry_run unless server locks are deliberately enabled.
 [functions."autotrade"]
-  schedule = "30 1,7 * * 1-5"
+  schedule = "0 2-9 * * 1-5"
   node_bundler = "esbuild"
 
 # Multi-agent AI council
