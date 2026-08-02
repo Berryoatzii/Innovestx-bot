@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "0.1.0",
+  "policyId": "example-fail-closed",
+  "effectiveFrom": null,
+  "liveTradingEnabled": false,
+  "allocationTargets": {
+    "CORE": 0.60,
+    "ACTIVE": 0.40
+  },
+  "riskLimits": {
+    "maxOrderValueBaht": 0,
+    "maxPositionWeight": 0,
+    "maxActiveAllocation": 0,
+    "minimumCashReserveBaht": 0,
+    "maxDailyTurnoverBaht": 0,
+    "maxDailyRealizedLossBaht": 0,
+    "maxPortfolioDrawdownPct": 0,
+    "maxOpenOrders": 0,
+    "maxOrdersPerSymbolPerDay": 0,
+    "maxSlippageBps": 0,
+    "maxQuoteAgeSeconds": 0,
+    "cooldownMinutesAfterCriticalError": 1440
+  },
+  "execution": {
+    "humanApprovalRequired": true,
+    "allowMarketOrders": false,
+    "allowAuctionOrders": false,
+    "allowPartialPositionExit": false,
+    "allowFullPositionExit": false,
+    "requireFreshBrokerQuote": true,
+    "requireOrderReconciliation": true,
+    "requireIdempotencyKey": true
+  },
+  "dataQuality": {
+    "missingRequiredInputAction": "NO_TRADE",
+    "staleInputAction": "NO_TRADE",
+    "conflictingSourceAction": "NO_TRADE",
+    "unknownMarketStatusAction": "NO_TRADE"
+  },
+  "aiPolicy": {
+    "llmMayAuthorizeOrder": false,
+    "llmMaySetQuantity": false,
+    "llmMayOverrideRisk": false,
+    "llmRole": [
+      "EXPLAIN_RULE_OUTPUT",
+      "SUMMARIZE_EVIDENCE",
+      "FLAG_ANOMALY"
+    ]
+  },
+  "notes": [
+    "All zero risk limits intentionally disable live execution.",
+    "Replace values only after research, shadow testing and explicit approval.",
+    "Do not rebalance existing positions automatically from this example file."
+  ]
+}
