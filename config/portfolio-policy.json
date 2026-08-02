@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "targets": {
+    "CORE": 0.60,
+    "ACTIVE": 0.40,
+    "REVIEW": 0.00
+  },
+  "classification": {
+    "defaultBucket": "REVIEW",
+    "coreSymbols": [],
+    "activeSymbols": [],
+    "reviewSymbols": []
+  },
+  "core": {
+    "maxPositionWeight": 0.15,
+    "allowIntradaySell": false,
+    "sellAuthority": "THESIS_BREAK_MANUAL_REVIEW_ONLY"
+  },
+  "active": {
+    "maxPositionWeight": 0.10,
+    "maxPositions": 4,
+    "riskPerTradePct": 0.005,
+    "strategy": "MOMENTUM_BREAKOUT_V1"
+  },
+  "review": {
+    "allowOrders": false
+  },
+  "research": {
+    "minimumBars": 220,
+    "minimumShadowTradingDays": 20,
+    "minimumDecisionEvents": 100,
+    "benchmarkPrimary": "SET_TRI",
+    "benchmarkFallback": "SET_INDEX",
+    "cashAnnualRate": 0.0
+  },
+  "costModel": {
+    "commissionRate": 0.0015,
+    "setTradingFeeRate": 0.00005,
+    "clearingFeeRate": 0.00001,
+    "regulatoryFeeRate": 0.00001,
+    "vatRate": 0.07,
+    "slippageBpsPerSide": 10,
+    "minimumCommissionPerDay": 0
+  },
+  "execution": {
+    "humanApprovalRequired": true,
+    "allowMarketOrders": false,
+    "allowAuctionOrders": false,
+    "allowFullPositionExit": false
+  },
+  "failClosed": {
+    "unknownBucket": "NO_TRADE",
+    "missingData": "NO_TRADE",
+    "staleData": "NO_TRADE",
+    "corporateActionUnknown": "NO_TRADE",
+    "holidayCalendarUnknown": "NO_TRADE"
+  }
+}
