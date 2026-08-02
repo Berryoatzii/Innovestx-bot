@@ -19,6 +19,12 @@
   schedule = "0 2-9 * * 1-5"
   node_bundler = "esbuild"
 
+# Read-only reconciliation every 10 minutes from 10:00 to 16:50 BKK.
+# It never retries or creates an order.
+[functions."reconcile-orders"]
+  schedule = "*/10 3-9 * * 1-5"
+  node_bundler = "esbuild"
+
 # Secure Telegram webhook for the single authorized approver.
 [functions."telegram"]
   node_bundler = "esbuild"
