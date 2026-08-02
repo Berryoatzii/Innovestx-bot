@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { handler: secureInvxHandler } = require('../functions/invx');
+const { fetchRawOrders } = require('./settrade-read');
 const {
   getIntent,
   transitionIntent,
@@ -61,7 +62,6 @@ function bkkClock(date = new Date()) {
 function isThaiContinuousSession(date = new Date()) {
   const { weekday, minutes } = bkkClock(date);
   if (weekday < 1 || weekday > 5) return false;
-  // Avoid opening/closing auctions and the lunch boundary.
   return (minutes >= 10 * 60 + 5 && minutes <= 12 * 60 + 25) ||
     (minutes >= 14 * 60 + 5 && minutes <= 16 * 60 + 20);
 }
@@ -90,12 +90,8 @@ async function callInvx({ action, method = 'GET', body = null, query = {}, inten
   });
 
   let payload = {};
-  try {
-    payload = JSON.parse(response.body || '{}');
-  } catch {
-    payload = { raw: response.body || '' };
-  }
-
+  try { payload = JSON.parse(response.body || '{}'); }
+  catch { payload = { raw: response.body || '' }; }
   return { statusCode: response.statusCode || 500, payload };
 }
 
@@ -110,7 +106,7 @@ function hasDuplicateOpenOrder(orders, intent) {
   const terminal = ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'];
   return (Array.isArray(orders) ? orders : []).some((order) => {
     const status = String(order.status || '').toUpperCase();
-    return String(order.sym || order.symbol || '').toUpperCase() === intent.symbol &&
+    return String(order.symbol || order.sym || '').toUpperCase() === intent.symbol &&
       normalizeOrderSide(order.side) === intent.side &&
       !terminal.some((word) => status.includes(word));
   });
@@ -138,19 +134,15 @@ function validateMarketData(intent, quote) {
 
 async function preflightIntent(intent, event) {
   const availability = approvalAvailability();
-  if (!availability.ready) {
-    throw new Error(`LIVE_APPROVAL_NOT_READY:${JSON.stringify(availability)}`);
-  }
+  if (!availability.ready) throw new Error(`LIVE_APPROVAL_NOT_READY:${JSON.stringify(availability)}`);
   if (!isThaiContinuousSession()) throw new Error('MARKET_NOT_IN_CONTINUOUS_SESSION');
   if (isExpired(intent)) throw new Error('INTENT_EXPIRED');
-  if (intent.side !== 'SELL' && intent.side !== 'BUY') throw new Error('UNSUPPORTED_SIDE');
+  if (!['SELL', 'BUY'].includes(intent.side)) throw new Error('UNSUPPORTED_SIDE');
   if (intent.portfolioBucket === 'CORE') throw new Error('CORE_POSITION_REQUIRES_THESIS_BREAK_REVIEW');
 
   const dataResponse = await callInvx({ action: 'getData', event });
   if (dataResponse.statusCode !== 200) throw new Error(`PORTFOLIO_FETCH_FAILED:${dataResponse.statusCode}`);
-
   const portfolio = Array.isArray(dataResponse.payload.portfolio) ? dataResponse.payload.portfolio : [];
-  const orders = Array.isArray(dataResponse.payload.orders) ? dataResponse.payload.orders : [];
   const position = portfolio.find((item) => String(item.sym || '').toUpperCase() === intent.symbol);
 
   if (intent.side === 'SELL') {
@@ -161,7 +153,8 @@ async function preflightIntent(intent, event) {
     if (intent.quantity > Math.floor(heldQty * maxFraction)) throw new Error('POSITION_FRACTION_LIMIT_EXCEEDED');
   }
 
-  if (hasDuplicateOpenOrder(orders, intent)) throw new Error('DUPLICATE_OPEN_ORDER');
+  const rawOrders = await fetchRawOrders();
+  if (hasDuplicateOpenOrder(rawOrders, intent)) throw new Error('DUPLICATE_OPEN_ORDER');
 
   const quoteResponse = await callInvx({ action: 'quote', query: { sym: intent.symbol }, event });
   if (quoteResponse.statusCode !== 200) throw new Error(`QUOTE_FETCH_FAILED:${quoteResponse.statusCode}`);
@@ -179,7 +172,7 @@ async function preflightIntent(intent, event) {
     throw new Error('DAILY_NOTIONAL_LIMIT');
   }
 
-  return { position, orders, market, submittedValue, dailyStats };
+  return { position, rawOrders, market, submittedValue, dailyStats };
 }
 
 function brokerStatusToIntentStatus(status) {
@@ -195,6 +188,7 @@ async function executeApprovedIntent(intentId, approver, event) {
   const initial = await getIntent(intentId, event);
   if (!initial) throw new Error('INTENT_NOT_FOUND');
   if (initial.status !== 'PENDING_APPROVAL') throw new Error(`INTENT_NOT_PENDING:${initial.status}`);
+
   if (isExpired(initial)) {
     await transitionIntent(intentId, 'PENDING_APPROVAL', 'EXPIRED', {}, {
       event,
@@ -205,15 +199,10 @@ async function executeApprovedIntent(intentId, approver, event) {
   }
 
   const availability = approvalAvailability();
-  if (!availability.ready) {
-    return { executed: false, status: 'LIVE_LOCKED', availability, intent: initial };
-  }
+  if (!availability.ready) return { executed: false, status: 'LIVE_LOCKED', availability, intent: initial };
 
   const approving = await transitionIntent(intentId, 'PENDING_APPROVAL', 'APPROVING', {
-    approval: {
-      approvedAt: new Date().toISOString(),
-      approver,
-    },
+    approval: { approvedAt: new Date().toISOString(), approver },
   }, { event, actor: approver });
 
   let preflight;
@@ -278,9 +267,13 @@ async function executeApprovedIntent(intentId, approver, event) {
   }, { event, actor: 'execution-engine' });
 
   await sleep(1500);
-  const reconcileResponse = await callInvx({ action: 'getData', event });
-  const brokerOrders = Array.isArray(reconcileResponse.payload.orders) ? reconcileResponse.payload.orders : [];
-  const matched = brokerOrders.find((order) => String(order.id || order.orderId || '') === String(orderId));
+  let matched = null;
+  try {
+    const brokerOrders = await fetchRawOrders();
+    matched = brokerOrders.find((order) => String(order.id || '') === String(orderId));
+  } catch (error) {
+    console.warn('[approval-executor] reconciliation read failed:', error.message);
+  }
 
   if (!matched) {
     const pending = await transitionIntent(intentId, 'SUBMITTED', 'RECONCILE_PENDING', {}, {
@@ -297,6 +290,7 @@ async function executeApprovedIntent(intentId, approver, event) {
       ...submitted.broker,
       reconciledAt: new Date().toISOString(),
       brokerStatus: matched.status,
+      matchedQuantity: matched.matchedQuantity,
     },
   }, { event, actor: 'reconciliation-engine' });
 
