@@ -1,6 +1,6 @@
 const https = require('https');
 const corePolicy = require('../../config/core-fundamental-policy.json');
-const { loadPortfolioPolicy } = require('../lib/portfolio-policy');
+const { loadEffectivePortfolioPolicy } = require('../lib/effective-portfolio-policy');
 const { getSnapshot, snapshotFreshness } = require('../lib/fundamental-snapshot-store');
 const { getThesisCard, isThesisApproved } = require('../lib/core-thesis-store');
 const { evaluateFundamentals, detectThesisBreak } = require('../lib/fundamental-scorecard');
@@ -33,8 +33,7 @@ function postTelegram(text) {
         'Content-Length': Buffer.byteLength(body),
       },
     }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
+      res.resume();
       res.on('end', () => resolve({ sent: res.statusCode >= 200 && res.statusCode < 300 }));
     });
     req.on('error', (error) => resolve({ sent: false, error: error.message }));
@@ -50,8 +49,8 @@ function summarizeRow(row) {
   return `${icon} ${row.symbol}: ${row.overall} — ${reasons}`;
 }
 
-exports.handler = async (event = {}) => {
-  const portfolioPolicy = loadPortfolioPolicy();
+async function runCoreReview(event = {}, options = {}) {
+  const { policy: portfolioPolicy, source } = await loadEffectivePortfolioPolicy(event);
   const coreSymbols = portfolioPolicy.classification.coreSymbols || [];
   const rows = [];
 
@@ -61,12 +60,14 @@ exports.handler = async (event = {}) => {
     const freshness = snapshotFreshness(snapshot, corePolicy);
     const thesisApproval = isThesisApproved(thesis);
     const fundamentals = snapshot ? evaluateFundamentals(snapshot, { policy: corePolicy }) : null;
-    const thesisBreak = snapshot ? detectThesisBreak(snapshot, snapshot.previousSnapshot || null, { policy: corePolicy }) : { broken: false, reasons: [] };
+    const thesisBreak = snapshot
+      ? detectThesisBreak(snapshot, snapshot.previousSnapshot || null, { policy: corePolicy })
+      : { broken: false, reasons: [] };
 
     const reasons = [];
     if (!freshness.fresh) reasons.push(freshness.reason);
     if (!thesisApproval.approved) reasons.push(thesisApproval.reason);
-    if (fundamentals && !fundamentals.passed) reasons.push(...fundamentals.hardFailures);
+    if (fundamentals && !fundamentals.passed) reasons.push(...(fundamentals.hardFailures || []));
     if (thesisBreak.broken) reasons.push(...thesisBreak.reasons);
 
     let overall = 'PASS';
@@ -85,26 +86,42 @@ exports.handler = async (event = {}) => {
     });
   }
 
-  const lines = [
-    '🏛 CORE QUALITY–DIVIDEND–VALUE REVIEW',
-    `เวลา: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`,
-    `CORE ที่กำหนด: ${coreSymbols.length} ตัว`,
-    '🔒 รายงานนี้ไม่สร้าง Order Intent และไม่ถัวอัตโนมัติ',
-    '',
-  ];
+  if (options.sendTelegram !== false) {
+    const lines = [
+      '🏛 CORE QUALITY–DIVIDEND–VALUE REVIEW',
+      `เวลา: ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`,
+      `CORE ที่ยืนยัน: ${coreSymbols.length} ตัว`,
+      `Policy source: ${source}`,
+      '🔒 รายงานนี้ไม่สร้าง Order Intent และไม่ถัวอัตโนมัติ',
+      '',
+    ];
 
-  if (rows.length === 0) {
-    lines.push('• ยังไม่มีหุ้นที่ได้รับการจัดเป็น CORE ทุกตัวจึงยังอยู่ REVIEW');
-  } else {
-    lines.push(...rows.map(summarizeRow));
+    if (rows.length === 0) {
+      lines.push('• ยังไม่มีหุ้นที่โอ๊ดยืนยันเป็น CORE ใช้ /setup เพื่อจัดหมวด');
+    } else {
+      lines.push(...rows.map(summarizeRow));
+    }
+    await postTelegram(lines.join('\n'));
   }
-  await postTelegram(lines.join('\n'));
 
-  return response(200, {
-    ok: true,
+  return {
     strategyVersion: corePolicy.strategyVersion,
+    policySource: source,
+    coreSymbols,
     rows,
     liveOrdersPlaced: 0,
     orderIntentsCreated: 0,
-  });
+  };
+}
+
+exports.handler = async (event = {}) => {
+  try {
+    const result = await runCoreReview(event, { sendTelegram: true });
+    return response(200, { ok: true, ...result });
+  } catch (error) {
+    await postTelegram(`🔴 CORE REVIEW ERROR\n${error.message}`);
+    return response(500, { ok: false, error: error.message });
+  }
 };
+
+module.exports.runCoreReview = runCoreReview;
