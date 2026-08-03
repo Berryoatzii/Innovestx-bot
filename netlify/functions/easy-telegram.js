@@ -1,5 +1,6 @@
 const crypto = require('crypto');
-const { handler: advancedTelegramHandler } = require('./telegram-advanced');
+const advancedTelegram = require('./telegram-advanced');
+const { handler: advancedTelegramHandler } = advancedTelegram;
 const { runOnboarding } = require('./portfolio-onboarding');
 const {
   EASY_VERSION,
@@ -189,6 +190,8 @@ exports.handler = async (event = {}) => {
 };
 
 module.exports._test = {
+  ...(advancedTelegram._test || {}),
+  EASY_VERSION,
   safeEqual,
   getHeader,
   identity,
