@@ -111,7 +111,8 @@ async function validateIntentBinding(event, intentId, suppliedSignature) {
   const expected = expectedIntentSignature(intentId, rawBody);
   if (!safeEqual(suppliedSignature, expected)) throw new Error('INVALID_ORDER_INTENT_SIGNATURE');
 
-  const intent = await getIntent(intentId, event);
+  // Money-moving binding must see the exact latest state or fail closed.
+  const intent = await getIntent(intentId, event, { requireStrong: true });
   if (!intent) throw new Error('ORDER_INTENT_NOT_FOUND');
   if (intent.status !== 'APPROVING') throw new Error(`ORDER_INTENT_NOT_APPROVING:${intent.status}`);
   if (intent.portfolioBucket !== 'ACTIVE') throw new Error('ORDER_INTENT_BUCKET_NOT_ACTIVE');
