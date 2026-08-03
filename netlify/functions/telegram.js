@@ -1,5 +1,6 @@
 // Secure Telegram operator and approval bot.
-// Classification, research and readiness are operator workflows; broker mutations remain intent-gated.
+// Read-only/operator workflows trust the configured private chat.
+// Money-moving approval requires both the configured chat and approver user ID.
 
 const crypto = require('crypto');
 const { listIntents } = require('../lib/order-intent-store');
@@ -20,7 +21,7 @@ const { runResearchBacktests } = require('./research-backtest');
 const { runStrategyShadow } = require('./strategy-shadow');
 const { runCoreReview } = require('./core-review');
 
-const APP_VERSION = '8.4.2-deploy-probe';
+const APP_VERSION = '8.5.0-action-plan';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '');
 const APPROVER_USER_ID = String(process.env.TELEGRAM_APPROVER_USER_ID || '');
@@ -59,6 +60,30 @@ function deploymentInfo() {
   };
 }
 
+function updateIdentity(update) {
+  const callback = update?.callback_query;
+  const message = update?.message;
+  return {
+    chatId: String(callback?.message?.chat?.id || message?.chat?.id || ''),
+    userId: String(callback?.from?.id || message?.from?.id || ''),
+    chatType: String(callback?.message?.chat?.type || message?.chat?.type || ''),
+  };
+}
+
+function isTrustedOperatorChat(update) {
+  const identity = updateIdentity(update);
+  return Boolean(TG_CHAT_ID && identity.chatId === TG_CHAT_ID);
+}
+
+function isAuthorizedApprover(update) {
+  const identity = updateIdentity(update);
+  return Boolean(
+    TG_CHAT_ID && APPROVER_USER_ID &&
+    identity.chatId === TG_CHAT_ID &&
+    identity.userId === APPROVER_USER_ID
+  );
+}
+
 function tgPost(method, data) {
   if (!TG_TOKEN) return Promise.resolve({ ok: false, description: 'TELEGRAM_TOKEN missing' });
   return fetch(`https://api.telegram.org/bot${TG_TOKEN}/${method}`, {
@@ -95,14 +120,6 @@ function actorFromCallback(callback) {
   return `telegram:${callback.from?.id || 'unknown'}`;
 }
 
-function isAuthorizedTelegramUpdate(update) {
-  const callback = update.callback_query;
-  const message = update.message;
-  const chatId = String(callback?.message?.chat?.id || message?.chat?.id || '');
-  const userId = String(callback?.from?.id || message?.from?.id || '');
-  return Boolean(TG_CHAT_ID && APPROVER_USER_ID && chatId === TG_CHAT_ID && userId === APPROVER_USER_ID);
-}
-
 async function handleClassificationCallback(callback, event) {
   const match = /^CLS:(C|A|R):([A-Z0-9._-]{1,20})$/i.exec(String(callback.data || ''));
   if (!match) return false;
@@ -122,9 +139,9 @@ async function handleClassificationCallback(callback, event) {
       `✅ CLASSIFIED ${saved.symbol}`,
       `หมวด: ${saved.bucket}`,
       saved.bucket === 'CORE'
-        ? 'ขั้นถัดไป: ต้องมี Fundamental Snapshot + Thesis Card ก่อนซื้อเพิ่ม'
+        ? 'ขั้นถัดไป: ต้องมี Fundamental Snapshot + Thesis Card ก่อนซื้อเพิ่มหรือขายจากพื้นฐาน'
         : saved.bucket === 'ACTIVE'
-          ? 'ขั้นถัดไป: ระบบจะทำ Backtest และ Shadow ตามกฎ'
+          ? 'ขั้นถัดไป: ระบบจะทำ Backtest, Shadow และ Decision Plan ตามกฎ'
           : 'สถานะ: ยังไม่อนุญาตให้สร้างข้อเสนอซื้อขาย',
     ].join('\n'));
     await runOnboarding(event, { sendMessages: true, batchSize: 1 });
@@ -134,12 +151,24 @@ async function handleClassificationCallback(callback, event) {
   return true;
 }
 
-async function handleApprovalCallback(callback, event) {
+async function handleApprovalCallback(callback, update, event) {
   const match = /^(APV|REJ):([a-f0-9]{16})$/i.exec(String(callback.data || ''));
   if (!match) return false;
+
+  if (!isAuthorizedApprover(update)) {
+    const identity = updateIdentity(update);
+    await answerCallback(callback.id, 'User ID ผู้อนุมัติยังไม่ตรง ระบบไม่ส่งออเดอร์', true);
+    await tgSend([
+      '🔒 ORDER APPROVAL BLOCKED',
+      `Telegram User ID ที่กด: ${identity.userId || '-'}`,
+      `Approver configured: ${APPROVER_USER_ID ? 'มี แต่ไม่ตรง' : 'ยังไม่ได้ตั้ง'}`,
+      'คำสั่งอ่านข้อมูลและจัดหมวดยังใช้ได้ตามปกติ แต่เงินจริงยังถูกล็อก',
+    ].join('\n'));
+    return true;
+  }
+
   const [, action, intentId] = match;
   const actor = actorFromCallback(callback);
-
   if (action.toUpperCase() === 'REJ') {
     try {
       const rejected = await rejectIntent(intentId, actor, event);
@@ -155,7 +184,7 @@ async function handleApprovalCallback(callback, event) {
     return true;
   }
 
-  await answerCallback(callback.id, 'รับคำขออนุมัติ กำลังตรวจซ้ำ...');
+  await answerCallback(callback.id, 'รับคำขออนุมัติ กำลังตรวจราคา พอร์ต และความเสี่ยงซ้ำ...');
   try {
     const result = await executeApprovedIntent(intentId, actor, event);
     if (result.status === 'LIVE_LOCKED') {
@@ -215,9 +244,10 @@ async function sendPortfolioSummary(event) {
   ].join('\n'));
 }
 
-async function handleCommand(message, event) {
+async function handleCommand(message, update, event) {
   const text = String(message.text || '').trim();
   const command = text.split(/\s+/)[0].toLowerCase();
+  const identity = updateIdentity(update);
 
   if (command === '/version') {
     const info = deploymentInfo();
@@ -227,7 +257,22 @@ async function handleCommand(message, event) {
       `Commit: ${String(info.commit).slice(0, 12)}`,
       `Branch: ${info.branch}`,
       `Platform: ${info.platform}`,
+      `Operator chat: ${isTrustedOperatorChat(update) ? 'READY' : 'BLOCKED'}`,
+      `Order approver: ${isAuthorizedApprover(update) ? 'READY' : 'LOCKED'}`,
       `Live trading: ${info.liveTradingEnabled ? 'ON' : 'OFF'}`,
+    ].join('\n'));
+    return;
+  }
+
+  if (command === '/whoami') {
+    await tgSend([
+      '👤 TELEGRAM OPERATOR ID',
+      `Chat ID: ${identity.chatId || '-'}`,
+      `User ID: ${identity.userId || '-'}`,
+      `Chat type: ${identity.chatType || '-'}`,
+      `Operator access: ${isTrustedOperatorChat(update) ? 'READY' : 'BLOCKED'}`,
+      `Order approval: ${isAuthorizedApprover(update) ? 'READY' : 'LOCKED'}`,
+      'ไม่มี Secret หรือ Broker Credential ถูกแสดงในข้อความนี้',
     ].join('\n'));
     return;
   }
@@ -283,7 +328,8 @@ async function handleCommand(message, event) {
 
   await tgSend([
     '🤖 Investment Bot — Operator Console',
-    '/version — ตรวจว่า Telegram ชี้ Deploy เวอร์ชันใด',
+    '/version — ตรวจเวอร์ชันและสถานะสิทธิ์',
+    '/whoami — ตรวจ Telegram Chat/User ID',
     '/setup — จัดหมวดหุ้น CORE / ACTIVE / REVIEW',
     '/portfolio — ดูแผนที่พอร์ต',
     '/readiness — ดูว่าระบบติดตรงไหน',
@@ -292,7 +338,7 @@ async function handleCommand(message, event) {
     '/core — ตรวจพื้นฐานและ Thesis ของ CORE',
     '/pending — ดูข้อเสนอที่รออนุมัติ',
     '',
-    'การซื้อขายจริงเกิดได้เฉพาะ Intent ที่ผ่าน Rules/Research/Risk และโอ๊ดกดอนุมัติ',
+    'Decision Plan จะแสดงจำนวน ราคา มูลค่าธุรกิจ และจังหวะกราฟ แต่ยังไม่ใช่ออเดอร์',
   ].join('\n'));
 }
 
@@ -305,7 +351,6 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: HEADERS, body: '' };
   const action = event.queryStringParameters?.action || '';
 
-  // Health checks must never depend on Blobs or broker credentials.
   if (action === 'health') {
     return response(200, { ok: true, ...deploymentInfo(), blobInitialization: 'lazy' });
   }
@@ -341,22 +386,22 @@ exports.handler = async (event) => {
   try { update = JSON.parse(event.body || '{}'); }
   catch { return response(400, { error: 'Invalid JSON update' }); }
 
-  if (!isAuthorizedTelegramUpdate(update)) {
-    if (update.callback_query?.id) await answerCallback(update.callback_query.id, 'ไม่มีสิทธิ์อนุมัติ', true);
-    return response(403, { error: 'Telegram user/chat is not authorized' });
+  if (!isTrustedOperatorChat(update)) {
+    if (update.callback_query?.id) await answerCallback(update.callback_query.id, 'Chat นี้ไม่มีสิทธิ์ใช้งาน', true);
+    return response(403, { error: 'Telegram chat is not authorized' });
   }
 
   if (update.callback_query) {
     if (await handleClassificationCallback(update.callback_query, event)) return response(200, { ok: true });
-    if (await handleApprovalCallback(update.callback_query, event)) return response(200, { ok: true });
+    if (await handleApprovalCallback(update.callback_query, update, event)) return response(200, { ok: true });
     await answerCallback(update.callback_query.id, 'คำสั่งไม่ถูกต้อง', true);
     return response(400, { error: 'Unknown callback' });
   }
 
   if (update.message?.text) {
     try {
-      console.log('[telegram]', APP_VERSION, update.message.text);
-      await handleCommand(update.message, event);
+      console.log('[telegram]', APP_VERSION, update.message.text, updateIdentity(update));
+      await handleCommand(update.message, update, event);
       return response(200, { ok: true, version: APP_VERSION });
     } catch (error) {
       await tgSend(`🔴 COMMAND ERROR — ${APP_VERSION}\n${error.message}`);
@@ -370,8 +415,10 @@ exports.handler = async (event) => {
 module.exports._test = {
   APP_VERSION,
   deploymentInfo,
+  updateIdentity,
+  isTrustedOperatorChat,
+  isAuthorizedApprover,
   safeEqual,
   getHeader,
-  isAuthorizedTelegramUpdate,
   handleClassificationCallback,
 };
