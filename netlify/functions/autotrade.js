@@ -65,24 +65,30 @@ function postTelegram(text) {
 function summarizeAdvisory(result) {
   const simulated = (result.orders_placed || []).filter((order) => order.orderId === 'SIMULATE');
   const failed = result.orders_failed || [];
+  const observations = simulated.slice(0, 10).map((order) => ({
+    symbol: String(order.sym || '').toUpperCase(),
+    sym: String(order.sym || '').toUpperCase(),
+    side: String(order.side || 'SELL').toUpperCase(),
+    quantityObserved: Number(order.qty || 0),
+    qty: Number(order.qty || 0),
+    referencePrice: Number(order.mkt || 0),
+    mkt: Number(order.mkt || 0),
+    reason: order.reason || null,
+    grade: order.grade || null,
+    finalScore: order.final_score ?? null,
+    authority: 'ADVISORY_ONLY',
+    orderId: 'SIMULATE',
+  }));
   return {
-    observations: simulated.slice(0, 10).map((order) => ({
-      symbol: String(order.sym || '').toUpperCase(),
-      side: String(order.side || 'SELL').toUpperCase(),
-      quantityObserved: Number(order.qty || 0),
-      referencePrice: Number(order.mkt || 0),
-      reason: order.reason || null,
-      grade: order.grade || null,
-      finalScore: order.final_score ?? null,
-      authority: 'ADVISORY_ONLY',
-    })),
+    observations,
+    simulated: observations,
     failedCount: failed.length,
   };
 }
 
 async function runAutoTrader(mode = 'dry_run', portfolioOverride = null) {
   if (String(mode).toLowerCase() === 'execute') {
-    throw new Error('DIRECT_EXECUTE_DISABLED_AI_HAS_NO_ORDER_AUTHORITY');
+    throw new Error('DIRECT_EXECUTE_DISABLED_USE_HUMAN_APPROVAL:AI_HAS_NO_ORDER_AUTHORITY');
   }
   return runEngine(normalizeMode(mode), portfolioOverride);
 }
@@ -151,4 +157,8 @@ exports.handler = async () => {
 };
 
 module.exports.runAutoTrader = runAutoTrader;
-module.exports._test = { normalizeMode, summarizeAdvisory };
+module.exports._test = {
+  normalizeMode,
+  summarizeAdvisory,
+  summarizeSignals: summarizeAdvisory,
+};
