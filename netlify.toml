@@ -13,10 +13,22 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
 
-# Shadow analysis cycle — every hour from 09:00 to 16:00 BKK on weekdays.
-# This function can create approval intents but cannot execute live orders directly.
+# AI advisory cycle — every hour from 09:00 to 16:00 BKK on weekdays.
+# It can only explain observations. It creates zero order intents and places zero orders.
 [functions."autotrade"]
   schedule = "0 2-9 * * 1-5"
+  node_bundler = "esbuild"
+
+# Rules-only post-close shadow research — 17:30 BKK on weekdays.
+# It updates a virtual portfolio and evidence ledger only.
+[functions."strategy-shadow"]
+  schedule = "30 10 * * 1-5"
+  node_bundler = "esbuild"
+
+# CORE quality/dividend/value review — Monday 18:15 BKK.
+# It checks verified fundamentals and approved thesis cards; it creates no orders.
+[functions."core-review"]
+  schedule = "15 11 * * 1"
   node_bundler = "esbuild"
 
 # Read-only reconciliation every 10 minutes from 10:00 to 16:50 BKK.
@@ -37,6 +49,6 @@
 [functions."agents"]
   node_bundler = "esbuild"
 
-# Manual shadow trigger — no execute mode.
+# Manual advisory/shadow trigger — no execute mode.
 [functions."autotrader-trigger"]
   node_bundler = "esbuild"

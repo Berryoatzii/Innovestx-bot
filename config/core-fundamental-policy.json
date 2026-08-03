@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "strategyVersion": "QUALITY_DIVIDEND_VALUE_V1.0.0",
+  "sourcePriority": [
+    "SET_OFFICIAL",
+    "SEC_FILING",
+    "COMPANY_FILING"
+  ],
+  "freshnessDays": {
+    "marketRatios": 7,
+    "quarterlyFinancials": 140,
+    "annualFinancials": 430,
+    "thesisCard": 180
+  },
+  "general": {
+    "preferredDividendYieldPct": 5.0,
+    "minimumDividendYieldPct": 4.0,
+    "minimumDividendYearsPaidOfFive": 3,
+    "maximumMedianPayoutRatioPct": 80,
+    "minimumMedianRoePct3Y": 12,
+    "minimumMedianRoaPct3Y": 5,
+    "maximumDebtToEquity": 1.5,
+    "minimumInterestCoverage": 3,
+    "minimumPositiveEarningsYearsOfFive": 4,
+    "minimumPositiveOperatingCashFlowYearsOfFive": 4,
+    "minimumPositiveFreeCashFlowYearsOfFive": 3,
+    "minimumEpsCagr3Y": 0,
+    "maximumPe": 18,
+    "maximumPeVsOwnMedian": 1.0,
+    "maximumPeVsSectorMedian": 0.95,
+    "minimumMarginOfSafetyPct": 15,
+    "requirePositiveRetainedEarnings": true,
+    "requireUnqualifiedAuditOpinion": true
+  },
+  "sectorProfiles": {
+    "BANKING": {
+      "disableMetrics": ["ROA", "D_E", "INTEREST_COVERAGE"],
+      "minimumMedianRoePct3Y": 8,
+      "maximumPe": 14,
+      "requiredManualEvidence": ["CAPITAL_ADEQUACY", "NPL_RATIO", "COVERAGE_RATIO"]
+    },
+    "FINANCE_AND_SECURITIES": {
+      "disableMetrics": ["ROA", "D_E", "INTEREST_COVERAGE"],
+      "minimumMedianRoePct3Y": 10,
+      "maximumPe": 15,
+      "requiredManualEvidence": ["NPL_RATIO", "CREDIT_COST", "LIQUIDITY_PROFILE"]
+    },
+    "ENERGY_AND_UTILITIES": {
+      "minimumMedianRoePct3Y": 8,
+      "minimumMedianRoaPct3Y": 3,
+      "maximumDebtToEquity": 2.5,
+      "minimumInterestCoverage": 2.5,
+      "maximumPe": 25,
+      "requiredManualEvidence": ["CONCESSION_OR_PPA_QUALITY", "FUEL_OR_COMMODITY_RISK"]
+    },
+    "HEALTH_CARE_SERVICES": {
+      "minimumMedianRoePct3Y": 10,
+      "minimumMedianRoaPct3Y": 4,
+      "maximumDebtToEquity": 1.5,
+      "maximumPe": 30,
+      "requiredManualEvidence": ["CAPACITY_UTILIZATION", "PATIENT_MIX", "PRICING_POWER"]
+    },
+    "PROPERTY_DEVELOPMENT": {
+      "minimumMedianRoePct3Y": 8,
+      "minimumMedianRoaPct3Y": 3,
+      "maximumDebtToEquity": 1.8,
+      "minimumInterestCoverage": 2,
+      "maximumPe": 15,
+      "requiredManualEvidence": ["BACKLOG", "INVENTORY_AGE", "PRE_SALES_QUALITY"]
+    },
+    "REIT_IFF": {
+      "disableMetrics": ["PE", "ROE", "ROA", "D_E", "EPS_CAGR"],
+      "minimumDividendYieldPct": 5,
+      "requiredManualEvidence": ["DISTRIBUTABLE_INCOME", "OCCUPANCY_OR_UTILIZATION", "DEBT_MATURITY", "ASSET_NAV_TREND"]
+    }
+  },
+  "thesisBreakTriggers": {
+    "epsDeclineYoYPct": -25,
+    "consecutiveWeakQuarters": 2,
+    "dividendCutPct": -20,
+    "roeDropPctPoints": -4,
+    "deIncreaseMultiple": 1.5,
+    "auditorOpinionChanged": true,
+    "moatLost": true,
+    "materialDisruption": true,
+    "governanceRedFlag": true
+  },
+  "averagingRules": {
+    "priceDeclineAloneIsNeverSufficient": true,
+    "minimumPriceDeclineFromLastTranchePct": 10,
+    "maximumPriceDeclineTriggerPct": 25,
+    "maximumTranches": 3,
+    "requiresAllFundamentalGates": true,
+    "requiresThesisReapproval": true,
+    "requiresFreshValuation": true,
+    "blocksAfterDividendCut": true,
+    "blocksAfterEarningsTrigger": true,
+    "blocksWhenPositionWeightExceeded": true
+  }
+}
