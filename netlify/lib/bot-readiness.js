@@ -18,6 +18,14 @@ async function inspectCoreEvidence(symbols, event) {
     const thesisState = isThesisApproved(thesis);
     const fundamentals = snapshot ? evaluateFundamentals(snapshot, { policy: corePolicy }) : null;
     const passed = Boolean(snapshot && thesis && freshness.fresh && thesisState.approved && fundamentals?.passed);
+    const blockers = [
+      !snapshot ? 'MISSING_FUNDAMENTAL_SNAPSHOT' : null,
+      !freshness.fresh ? freshness.reason : null,
+      !thesisState.approved ? thesisState.reason : null,
+      ...(fundamentals && !fundamentals.passed
+        ? (fundamentals.hardFailures || fundamentals.reasons || ['FUNDAMENTALS_NOT_PASSED'])
+        : []),
+    ].filter(Boolean);
     rows.push({
       symbol,
       passed,
@@ -25,12 +33,7 @@ async function inspectCoreEvidence(symbols, event) {
       fresh: freshness.fresh,
       thesisApproved: thesisState.approved,
       fundamentalsPassed: Boolean(fundamentals?.passed),
-      blockers: [
-        !snapshot ? 'MISSING_FUNDAMENTAL_SNAPSHOT' : null,
-        !freshness.fresh ? freshness.reason : null,
-        !thesisState.approved ? thesisState.reason : null,
-        fundamentals && !fundamentals.passed ? ...[] : null,
-      ].filter(Boolean),
+      blockers: [...new Set(blockers)],
     });
   }
   return rows;
@@ -165,4 +168,4 @@ function readinessText(readiness) {
   return rows.join('\n');
 }
 
-module.exports = { buildBotReadiness, readinessText };
+module.exports = { buildBotReadiness, readinessText, inspectCoreEvidence };
