@@ -90,11 +90,11 @@ test('invalid state transition is rejected', () => {
 
 test('Thai market session gate excludes auctions and lunch', () => {
   const { isThaiContinuousSession } = require('../netlify/lib/approval-executor');
-  assert.equal(isThaiContinuousSession(new Date('2026-08-03T02:59:00.000Z')), false); // 09:59 BKK
-  assert.equal(isThaiContinuousSession(new Date('2026-08-03T03:10:00.000Z')), true);  // 10:10 BKK
-  assert.equal(isThaiContinuousSession(new Date('2026-08-03T05:30:00.000Z')), false); // 12:30 BKK
-  assert.equal(isThaiContinuousSession(new Date('2026-08-03T07:10:00.000Z')), true);  // 14:10 BKK
-  assert.equal(isThaiContinuousSession(new Date('2026-08-03T09:25:00.000Z')), false); // 16:25 BKK
+  assert.equal(isThaiContinuousSession(new Date('2026-08-03T02:59:00.000Z')), false);
+  assert.equal(isThaiContinuousSession(new Date('2026-08-03T03:10:00.000Z')), true);
+  assert.equal(isThaiContinuousSession(new Date('2026-08-03T05:30:00.000Z')), false);
+  assert.equal(isThaiContinuousSession(new Date('2026-08-03T07:10:00.000Z')), true);
+  assert.equal(isThaiContinuousSession(new Date('2026-08-03T09:25:00.000Z')), false);
 });
 
 test('market data gate rejects stale-looking zero quotes and wide spreads', () => {
@@ -111,17 +111,27 @@ test('approval engine is fail-closed by default', () => {
   assert.ok(availability.missing.includes('ADMIN_TOKEN'));
 });
 
-test('Telegram update requires both configured chat and approver user', () => {
+test('configured private chat can use operator commands without live approver identity', () => {
+  process.env.TELEGRAM_CHAT_ID = '100';
+  clear('../netlify/functions/telegram');
+  const { _test } = require('../netlify/functions/telegram');
+
+  const update = { message: { from: { id: 201 }, chat: { id: 100, type: 'private' } } };
+  assert.equal(_test.isTrustedOperatorChat(update), true);
+  assert.equal(_test.isAuthorizedApprover(update), false);
+});
+
+test('live approval requires both configured chat and approver user', () => {
   process.env.TELEGRAM_CHAT_ID = '100';
   process.env.TELEGRAM_APPROVER_USER_ID = '200';
   clear('../netlify/functions/telegram');
   const { _test } = require('../netlify/functions/telegram');
 
-  assert.equal(_test.isAuthorizedTelegramUpdate({
+  assert.equal(_test.isAuthorizedApprover({
     callback_query: { from: { id: 200 }, message: { chat: { id: 100 } } },
   }), true);
 
-  assert.equal(_test.isAuthorizedTelegramUpdate({
+  assert.equal(_test.isAuthorizedApprover({
     callback_query: { from: { id: 201 }, message: { chat: { id: 100 } } },
   }), false);
 });
