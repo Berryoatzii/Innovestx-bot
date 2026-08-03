@@ -7,7 +7,6 @@ const {
   setClassification,
   savePortfolioSnapshot,
 } = require('../lib/portfolio-classification-store');
-const { runRulesProposals } = require('./rules-proposals');
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '');
@@ -81,7 +80,7 @@ async function configureEasyTelegram() {
     return { ok: false, description: 'URL or TELEGRAM_WEBHOOK_SECRET missing' };
   }
   const webhook = await tgPost('setWebhook', {
-    url: `${url}/.netlify/functions/easy-telegram`,
+    url: `${url}/.netlify/functions/telegram`,
     secret_token: WEBHOOK_SECRET,
     allowed_updates: ['message', 'callback_query'],
     drop_pending_updates: false,
@@ -177,26 +176,21 @@ async function runEasyAdvisor(event = {}, options = {}) {
     return {
       stage: 'CLASSIFICATION_CONFIRMATION_REQUIRED',
       recommendation,
-      proposals: null,
     };
   }
 
-  const proposals = await runRulesProposals(event, { sendTelegram: sendMessages });
-  if (sendMessages && (!proposals.intents || proposals.intents.length === 0)) {
+  if (sendMessages) {
     await tgSend([
       '✅ EASY MODE กำลังทำงาน',
       'พอร์ตจัดหมวดครบแล้ว และบอทเฝ้าตลาดให้อัตโนมัติ',
-      proposals.skipped
-        ? `ตอนนี้ยังไม่มีรายการพร้อมยืนยัน: ${proposals.reason}`
-        : 'รอบนี้ไม่มีรายการที่ผ่านกฎซื้อขาย',
       '',
-      'เมื่อมีรายการที่ผ่าน Backtest, Shadow, Risk และราคาตลาด บอทจะส่งปุ่มยืนยันมาเอง',
+      'รอบคำแนะนำซื้อขาย: 10:15 และ 14:15 น.',
+      'บอทจะส่งเฉพาะรายการที่ผ่าน Backtest, Shadow, Risk และราคาตลาด พร้อมปุ่มยืนยัน/ไม่ทำ',
     ].join('\n'));
   }
   return {
     stage: 'AUTOMATIC_MONITORING',
     recommendation,
-    proposals,
   };
 }
 
