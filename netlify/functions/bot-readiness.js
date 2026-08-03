@@ -1,8 +1,12 @@
 const https = require('https');
 const { buildBotReadiness, readinessText } = require('../lib/bot-readiness');
+const { isStrongConsistencyError } = require('../lib/blob-runtime');
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+
+let lastErrorSignature = '';
+let lastErrorSentAt = 0;
 
 function jsonResponse(statusCode, data) {
   return {
@@ -32,13 +36,41 @@ function postTelegram(text) {
   });
 }
 
+function errorMessage(error) {
+  if (isStrongConsistencyError(error)) {
+    return [
+      '🟠 BOT STORAGE NOTICE',
+      'ระบบอ่านข้อมูลสำหรับ Setup/Research ด้วยโหมดสำรองแล้ว',
+      'ส่วนการอนุมัติเงินจริงยังถูกล็อก เพราะ Runtime ยังไม่รองรับ Strong Consistency',
+      'ไม่มีคำสั่งซื้อขายจริงถูกส่ง',
+    ].join('\n');
+  }
+  return `🔴 READINESS ERROR\n${String(error?.message || error).slice(0, 1200)}`;
+}
+
+function shouldSendError(error) {
+  const signature = String(error?.message || error);
+  const now = Date.now();
+  if (signature === lastErrorSignature && now - lastErrorSentAt < 15 * 60 * 1000) return false;
+  lastErrorSignature = signature;
+  lastErrorSentAt = now;
+  return true;
+}
+
 exports.handler = async (event = {}) => {
   try {
     const readiness = await buildBotReadiness(event);
     await postTelegram(readinessText(readiness));
     return jsonResponse(200, { ok: true, readiness });
   } catch (error) {
-    await postTelegram(`🔴 READINESS ERROR\n${error.message}`);
-    return jsonResponse(500, { ok: false, error: error.message });
+    if (shouldSendError(error)) await postTelegram(errorMessage(error));
+    return jsonResponse(500, {
+      ok: false,
+      error: error.message,
+      liveTradingSafe: true,
+      liveOrdersPlaced: 0,
+    });
   }
 };
+
+module.exports._test = { errorMessage, shouldSendError };
