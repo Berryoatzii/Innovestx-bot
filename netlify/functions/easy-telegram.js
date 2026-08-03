@@ -47,6 +47,13 @@ function trustedChat(update) {
   return Boolean(TG_CHAT_ID && identity(update).chatId === TG_CHAT_ID);
 }
 
+function dynamicApproverAuthorized(update) {
+  const ids = identity(update);
+  const chatId = String(process.env.TELEGRAM_CHAT_ID || '');
+  const userId = String(process.env.TELEGRAM_APPROVER_USER_ID || '');
+  return Boolean(chatId && userId && ids.chatId === chatId && ids.userId === userId);
+}
+
 function tgPost(method, data) {
   if (!TG_TOKEN) return Promise.resolve({ ok: false, description: 'TELEGRAM_TOKEN missing' });
   return fetch(`https://api.telegram.org/bot${TG_TOKEN}/${method}`, {
@@ -192,6 +199,7 @@ exports.handler = async (event = {}) => {
 module.exports._test = {
   ...(advancedTelegram._test || {}),
   EASY_VERSION,
+  isAuthorizedApprover: dynamicApproverAuthorized,
   safeEqual,
   getHeader,
   identity,
