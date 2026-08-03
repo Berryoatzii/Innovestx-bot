@@ -2,10 +2,7 @@
 // Classification, research and readiness are operator workflows; broker mutations remain intent-gated.
 
 const crypto = require('crypto');
-const {
-  initializeBlobContext,
-  listIntents,
-} = require('../lib/order-intent-store');
+const { listIntents } = require('../lib/order-intent-store');
 const {
   approvalAvailability,
   executeApprovedIntent,
@@ -23,6 +20,7 @@ const { runResearchBacktests } = require('./research-backtest');
 const { runStrategyShadow } = require('./strategy-shadow');
 const { runCoreReview } = require('./core-review');
 
+const APP_VERSION = '8.4.2-deploy-probe';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '');
 const APPROVER_USER_ID = String(process.env.TELEGRAM_APPROVER_USER_ID || '');
@@ -49,6 +47,16 @@ function getHeader(headers, name) {
   const target = String(name).toLowerCase();
   const match = Object.entries(headers || {}).find(([key]) => String(key).toLowerCase() === target);
   return match ? match[1] : '';
+}
+
+function deploymentInfo() {
+  return {
+    version: APP_VERSION,
+    commit: process.env.COMMIT_REF || process.env.VERCEL_GIT_COMMIT_SHA || 'unknown',
+    branch: process.env.BRANCH || process.env.VERCEL_GIT_COMMIT_REF || 'unknown',
+    platform: process.env.NETLIFY ? 'netlify' : process.env.VERCEL ? 'vercel' : 'unknown',
+    liveTradingEnabled: process.env.LIVE_TRADING_ENABLED === 'true',
+  };
 }
 
 function tgPost(method, data) {
@@ -211,8 +219,21 @@ async function handleCommand(message, event) {
   const text = String(message.text || '').trim();
   const command = text.split(/\s+/)[0].toLowerCase();
 
+  if (command === '/version') {
+    const info = deploymentInfo();
+    await tgSend([
+      '🧪 BOT VERSION',
+      `Version: ${info.version}`,
+      `Commit: ${String(info.commit).slice(0, 12)}`,
+      `Branch: ${info.branch}`,
+      `Platform: ${info.platform}`,
+      `Live trading: ${info.liveTradingEnabled ? 'ON' : 'OFF'}`,
+    ].join('\n'));
+    return;
+  }
+
   if (command === '/setup') {
-    await tgSend('⏳ กำลังอ่านพอร์ตและเตรียมปุ่มจัดหมวด...');
+    await tgSend(`⏳ SETUP ACK — ${APP_VERSION}\nรับคำสั่งแล้ว กำลังอ่านพอร์ตและเตรียมปุ่มจัดหมวด...`);
     await runOnboarding(event, { sendMessages: true });
     return;
   }
@@ -262,6 +283,7 @@ async function handleCommand(message, event) {
 
   await tgSend([
     '🤖 Investment Bot — Operator Console',
+    '/version — ตรวจว่า Telegram ชี้ Deploy เวอร์ชันใด',
     '/setup — จัดหมวดหุ้น CORE / ACTIVE / REVIEW',
     '/portfolio — ดูแผนที่พอร์ต',
     '/readiness — ดูว่าระบบติดตรงไหน',
@@ -281,8 +303,12 @@ function requireAdmin(event) {
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: HEADERS, body: '' };
-  await initializeBlobContext(event);
   const action = event.queryStringParameters?.action || '';
+
+  // Health checks must never depend on Blobs or broker credentials.
+  if (action === 'health') {
+    return response(200, { ok: true, ...deploymentInfo(), blobInitialization: 'lazy' });
+  }
 
   if (action === 'setWebhook') {
     if (event.httpMethod !== 'POST' || !requireAdmin(event)) return response(401, { error: 'Unauthorized' });
@@ -302,7 +328,7 @@ exports.handler = async (event) => {
 
   if (action === 'test') {
     if (event.httpMethod !== 'POST' || !requireAdmin(event)) return response(401, { error: 'Unauthorized' });
-    const result = await tgSend('✅ Telegram Operator Bot เชื่อมต่อสำเร็จ');
+    const result = await tgSend(`✅ Telegram Operator Bot เชื่อมต่อสำเร็จ — ${APP_VERSION}`);
     return response(result.ok ? 200 : 502, result);
   }
 
@@ -329,18 +355,21 @@ exports.handler = async (event) => {
 
   if (update.message?.text) {
     try {
+      console.log('[telegram]', APP_VERSION, update.message.text);
       await handleCommand(update.message, event);
-      return response(200, { ok: true });
+      return response(200, { ok: true, version: APP_VERSION });
     } catch (error) {
-      await tgSend(`🔴 COMMAND ERROR\n${error.message}`);
-      return response(500, { error: error.message });
+      await tgSend(`🔴 COMMAND ERROR — ${APP_VERSION}\n${error.message}`);
+      return response(500, { error: error.message, version: APP_VERSION });
     }
   }
 
-  return response(200, { ok: true, ignored: true });
+  return response(200, { ok: true, ignored: true, version: APP_VERSION });
 };
 
 module.exports._test = {
+  APP_VERSION,
+  deploymentInfo,
   safeEqual,
   getHeader,
   isAuthorizedTelegramUpdate,
