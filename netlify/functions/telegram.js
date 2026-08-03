@@ -15,13 +15,15 @@ const {
   summarizeClassifications,
 } = require('../lib/portfolio-classification-store');
 const { fetchBrokerPortfolio } = require('../lib/broker-portfolio');
+const { buildActionPlan, formatActionPlan } = require('../lib/portfolio-action-plan');
+const { createManualOrderDraft, formatManualDraft } = require('../lib/manual-order-draft');
 const { runOnboarding } = require('./portfolio-onboarding');
 const { buildBotReadiness, readinessText } = require('../lib/bot-readiness');
 const { runResearchBacktests } = require('./research-backtest');
 const { runStrategyShadow } = require('./strategy-shadow');
 const { runCoreReview } = require('./core-review');
 
-const APP_VERSION = '8.5.0-action-plan';
+const APP_VERSION = '8.6.0-thai-menu';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '');
 const APPROVER_USER_ID = String(process.env.TELEGRAM_APPROVER_USER_ID || '');
@@ -84,6 +86,73 @@ function isAuthorizedApprover(update) {
   );
 }
 
+function commandDefinitions() {
+  return [
+    { command: 'menu', description: 'แสดงเมนูคำสั่งภาษาไทย' },
+    { command: 'setup', description: 'จัดหุ้นเป็น CORE ACTIVE หรือ REVIEW' },
+    { command: 'portfolio', description: 'ดูพอร์ต เงินสด และหมวดหุ้น' },
+    { command: 'plan', description: 'ดูแผนราคาและจำนวน เช่น /plan ICN' },
+    { command: 'buy', description: 'สร้างร่าง Limit Buy เช่น /buy AIT 100 4.90' },
+    { command: 'sell', description: 'สร้างร่าง Limit Sell เช่น /sell ICN 300 2.24' },
+    { command: 'pending', description: 'ดูร่างออเดอร์ที่รออนุมัติ' },
+    { command: 'orders', description: 'ดูคำสั่งซื้อขายในบัญชีโบรกเกอร์' },
+    { command: 'readiness', description: 'ตรวจความพร้อมและจุดที่ยังติด' },
+    { command: 'backtest', description: 'ทดสอบกลยุทธ์ ACTIVE หลังต้นทุน' },
+    { command: 'shadow', description: 'อัปเดตพอร์ตทดลองแบบไม่ใช้เงินจริง' },
+    { command: 'core', description: 'ตรวจพื้นฐานและ Thesis หุ้น CORE' },
+    { command: 'whoami', description: 'ตรวจ Chat ID และสิทธิ์อนุมัติ' },
+    { command: 'version', description: 'ตรวจเวอร์ชันที่กำลัง Deploy' },
+  ];
+}
+
+function menuText() {
+  return [
+    '📚 เมนู Berry Trading Bot',
+    '',
+    '1) ตั้งค่าพอร์ต',
+    '/setup — กดจัดหุ้นเป็น CORE / ACTIVE / REVIEW',
+    '/portfolio — ดูพอร์ตและเงินสดล่าสุด',
+    '',
+    '2) วิเคราะห์หุ้น',
+    '/plan ICN — ดูราคาตลาด มูลค่าธุรกิจ แนวรับ–แนวต้าน และจำนวนที่เหมาะสม',
+    '/core — ตรวจงบและ Thesis ของหุ้น CORE',
+    '/backtest — ทดสอบกฎหุ้น ACTIVE',
+    '/shadow — อัปเดตพอร์ตทดลอง',
+    '',
+    '3) สร้างร่างออเดอร์ Limit',
+    '/buy AIT 100 4.90 — ร่างซื้อ 100 หุ้น ราคา 4.90',
+    '/sell ICN 300 2.24 — ร่างขาย 300 หุ้น ราคา 2.24',
+    '/pending — ดูร่างที่รอกดอนุมัติ',
+    '/orders — ดูออเดอร์ที่โบรกเกอร์รับแล้ว',
+    '',
+    '4) ตรวจระบบ',
+    '/readiness — ดูว่ายังติดตรงไหน',
+    '/whoami — ตรวจสิทธิ์ Telegram',
+    '/version — ตรวจเวอร์ชัน Bot',
+    '',
+    '⚠️ /buy และ /sell สร้างเพียงร่างออเดอร์ ต้องกดอนุมัติอีกครั้ง และใช้ได้เฉพาะหุ้น ACTIVE ที่จัดหมวดแล้ว',
+    '🔒 การส่งเงินจริงยังขึ้นกับ Live Pilot Lock, Risk Gate และเวลาตลาด',
+  ].join('\n');
+}
+
+function normalizeCommand(token) {
+  return String(token || '').toLowerCase().split('@')[0];
+}
+
+function parseManualCommand(text, side) {
+  const parts = String(text || '').trim().split(/\s+/);
+  if (parts.length !== 4) {
+    const example = side === 'BUY' ? '/buy AIT 100 4.90' : '/sell ICN 300 2.24';
+    throw new Error(`รูปแบบไม่ถูกต้อง ตัวอย่าง: ${example}`);
+  }
+  return {
+    side,
+    symbol: parts[1],
+    quantity: Number(parts[2]),
+    price: Number(parts[3]),
+  };
+}
+
 function tgPost(method, data) {
   if (!TG_TOKEN) return Promise.resolve({ ok: false, description: 'TELEGRAM_TOKEN missing' });
   return fetch(`https://api.telegram.org/bot${TG_TOKEN}/${method}`, {
@@ -96,6 +165,15 @@ function tgPost(method, data) {
     catch { payload = { ok: false, description: `HTTP ${res.status}` }; }
     return payload;
   }).catch((error) => ({ ok: false, description: error.message }));
+}
+
+async function configureCommandMenu() {
+  if (!TG_CHAT_ID) return { ok: false, description: 'TELEGRAM_CHAT_ID missing' };
+  return tgPost('setMyCommands', {
+    commands: commandDefinitions(),
+    scope: { type: 'chat', chat_id: Number(TG_CHAT_ID) },
+    language_code: 'th',
+  });
 }
 
 async function tgSend(text, keyboard = null) {
@@ -120,6 +198,13 @@ function actorFromCallback(callback) {
   return `telegram:${callback.from?.id || 'unknown'}`;
 }
 
+function approvalKeyboard(intent) {
+  return [
+    [{ text: `✅ ตรวจและอนุมัติ ${intent.symbol}`, callback_data: `APV:${intent.id}` }],
+    [{ text: `❌ ปฏิเสธ ${intent.symbol}`, callback_data: `REJ:${intent.id}` }],
+  ];
+}
+
 async function handleClassificationCallback(callback, event) {
   const match = /^CLS:(C|A|R):([A-Z0-9._-]{1,20})$/i.exec(String(callback.data || ''));
   if (!match) return false;
@@ -136,13 +221,12 @@ async function handleClassificationCallback(callback, event) {
     });
     await answerCallback(callback.id, `บันทึก ${symbol} เป็น ${bucket} แล้ว`);
     await tgSend([
-      `✅ CLASSIFIED ${saved.symbol}`,
-      `หมวด: ${saved.bucket}`,
+      `✅ จัดหมวด ${saved.symbol} เป็น ${saved.bucket} แล้ว`,
       saved.bucket === 'CORE'
-        ? 'ขั้นถัดไป: ต้องมี Fundamental Snapshot + Thesis Card ก่อนซื้อเพิ่มหรือขายจากพื้นฐาน'
+        ? `ใช้ /plan ${saved.symbol} เพื่อดูแผน และ /core เพื่อตรวจพื้นฐานก่อนตัดสินใจ`
         : saved.bucket === 'ACTIVE'
-          ? 'ขั้นถัดไป: ระบบจะทำ Backtest, Shadow และ Decision Plan ตามกฎ'
-          : 'สถานะ: ยังไม่อนุญาตให้สร้างข้อเสนอซื้อขาย',
+          ? `ใช้ /plan ${saved.symbol} หรือสร้างร่างด้วย /buy และ /sell`
+          : 'หุ้น REVIEW ยังสร้างร่างออเดอร์ไม่ได้',
     ].join('\n'));
     await runOnboarding(event, { sendMessages: true, batchSize: 1 });
   } catch (error) {
@@ -159,10 +243,10 @@ async function handleApprovalCallback(callback, update, event) {
     const identity = updateIdentity(update);
     await answerCallback(callback.id, 'User ID ผู้อนุมัติยังไม่ตรง ระบบไม่ส่งออเดอร์', true);
     await tgSend([
-      '🔒 ORDER APPROVAL BLOCKED',
+      '🔒 อนุมัติออเดอร์ไม่ได้',
       `Telegram User ID ที่กด: ${identity.userId || '-'}`,
       `Approver configured: ${APPROVER_USER_ID ? 'มี แต่ไม่ตรง' : 'ยังไม่ได้ตั้ง'}`,
-      'คำสั่งอ่านข้อมูลและจัดหมวดยังใช้ได้ตามปกติ แต่เงินจริงยังถูกล็อก',
+      'คำสั่งอ่านข้อมูลและสร้างร่างยังใช้ได้ แต่เงินจริงยังถูกล็อก',
     ].join('\n'));
     return true;
   }
@@ -172,10 +256,10 @@ async function handleApprovalCallback(callback, update, event) {
   if (action.toUpperCase() === 'REJ') {
     try {
       const rejected = await rejectIntent(intentId, actor, event);
-      await answerCallback(callback.id, 'ปฏิเสธข้อเสนอแล้ว');
+      await answerCallback(callback.id, 'ปฏิเสธร่างออเดอร์แล้ว');
       await tgSend([
-        `❌ REJECTED [${rejected.id}]`,
-        `${rejected.side} ${rejected.symbol} ${rejected.quantity} หุ้น`,
+        `❌ ปฏิเสธแล้ว [${rejected.id}]`,
+        `${rejected.side} ${rejected.symbol} ${rejected.quantity} หุ้น @ ${Number(rejected.proposedPrice).toFixed(2)}`,
         'ไม่มีการส่งคำสั่งไปยังโบรกเกอร์',
       ].join('\n'));
     } catch (error) {
@@ -189,15 +273,15 @@ async function handleApprovalCallback(callback, update, event) {
     const result = await executeApprovedIntent(intentId, actor, event);
     if (result.status === 'LIVE_LOCKED') {
       await tgSend([
-        `🔒 APPROVAL RECEIVED [${intentId}]`,
-        'ระบบรับทราบการกดอนุมัติ แต่ยังไม่ได้ส่งออเดอร์',
-        'เหตุผล: Live Pilot ยังล็อกหรือวงเงินความเสี่ยงยังไม่ครบ',
+        `🔒 รับการอนุมัติแล้ว [${intentId}]`,
+        'ยังไม่ได้ส่งออเดอร์ เพราะ Live Pilot หรือวงเงินความเสี่ยงยังล็อกอยู่',
+        'ร่างออเดอร์จะไม่ถูกส่งย้อนหลังอัตโนมัติ',
       ].join('\n'));
       return true;
     }
     if (!result.executed) {
       await tgSend([
-        `🛑 ORDER BLOCKED [${intentId}]`,
+        `🛑 ออเดอร์ถูกบล็อก [${intentId}]`,
         `สถานะ: ${result.status}`,
         `เหตุผล: ${result.error || 'ไม่ผ่าน Risk/Execution Gate'}`,
         'ไม่มีการส่งคำสั่งซ้ำอัตโนมัติ',
@@ -206,18 +290,18 @@ async function handleApprovalCallback(callback, update, event) {
     }
     const intent = result.intent;
     await tgSend([
-      `✅ ORDER SUBMITTED [${intent.id}]`,
+      `✅ ส่งออเดอร์แล้ว [${intent.id}]`,
       `${intent.side} ${intent.symbol} ${intent.quantity} หุ้น`,
       `ราคา Limit: ${Number(intent.broker?.submittedPrice || 0).toFixed(2)}`,
       `Order ID: ${intent.broker?.orderId || 'รอตรวจสอบ'}`,
       `สถานะ: ${result.status}`,
       result.status === 'RECONCILE_PENDING'
-        ? '⚠️ ห้ามกดส่งซ้ำ ระบบกำลังรอ Reconcile กับโบรกเกอร์'
+        ? '⚠️ ห้ามกดส่งซ้ำ ระบบกำลังรอตรวจสถานะกับโบรกเกอร์'
         : 'ระบบบันทึกผลและตรวจสถานะกับโบรกเกอร์แล้ว',
     ].join('\n'));
   } catch (error) {
     await tgSend([
-      `🔴 APPROVAL ERROR [${intentId}]`,
+      `🔴 เกิดข้อผิดพลาดตอนอนุมัติ [${intentId}]`,
       `สาเหตุ: ${error.message}`,
       'ไม่มีการส่งคำสั่งซ้ำอัตโนมัติ',
     ].join('\n'));
@@ -235,24 +319,91 @@ async function sendPortfolioSummary(event) {
     return `${item.bucket === 'CORE' ? '🏛' : item.bucket === 'ACTIVE' ? '⚡' : '📝'} ${item.symbol} — ${item.bucket} — ${value.toLocaleString('th-TH', { maximumFractionDigits: 0 })}บ.`;
   });
   await tgSend([
-    '💼 PORTFOLIO MAP',
+    '💼 พอร์ตปัจจุบัน',
     `CORE ${summary.counts.CORE} | ACTIVE ${summary.counts.ACTIVE} | REVIEW ${summary.counts.REVIEW}`,
     `ยังไม่ยืนยัน ${summary.counts.UNCLASSIFIED} ตัว`,
-    `เงินสดจากบัญชี: ${Number(broker.cash || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`,
+    `เงินสด: ${Number(broker.cash || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`,
     '',
     ...rows.slice(0, 30),
   ].join('\n'));
 }
 
+async function sendStockPlan(symbol, event) {
+  const normalized = String(symbol || '').toUpperCase().trim();
+  if (!/^[A-Z0-9._-]{1,20}$/.test(normalized)) throw new Error('ตัวอย่างที่ถูกต้อง: /plan ICN');
+  const broker = await fetchBrokerPortfolio(event);
+  const position = broker.portfolio.find((item) => String(item.sym || '').toUpperCase() === normalized);
+  if (!position) throw new Error(`ไม่พบ ${normalized} ในพอร์ต`);
+  const plan = await buildActionPlan({
+    symbol: normalized,
+    sym: normalized,
+    side: 'REVIEW',
+    qty: Number(position.qty || 0),
+    avg: Number(position.avg || 0),
+    mkt: Number(position.mkt || 0),
+    reason: 'ผู้ใช้เรียกดู Decision Plan รายตัว',
+  }, event);
+  await tgSend(formatActionPlan(plan));
+}
+
+async function createAndSendManualDraft(text, side, identity, event) {
+  const parsed = parseManualCommand(text, side);
+  const result = await createManualOrderDraft(parsed, event, {
+    actor: `telegram:${identity.userId || 'operator'}`,
+  });
+  await tgSend(formatManualDraft(result), approvalKeyboard(result.intent));
+}
+
+async function sendPending(event) {
+  const pending = await listIntents(event, { status: 'PENDING_APPROVAL', limit: 20 });
+  if (pending.length === 0) {
+    await tgSend('✅ ไม่มีร่างออเดอร์ที่รออนุมัติ');
+    return;
+  }
+  await tgSend(`⏳ มีร่างออเดอร์รออนุมัติ ${pending.length} รายการ`);
+  for (const item of pending.slice(0, 10)) {
+    await tgSend([
+      `📝 ร่าง [${item.id}]`,
+      `${item.side} ${item.symbol} ${item.quantity} หุ้น @ ${Number(item.proposedPrice).toFixed(2)}`,
+      `แบบ: ${item.orderStyle || 'MARKETABLE_LIMIT'} | หมดอายุ ${new Date(item.expiresAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`,
+    ].join('\n'), approvalKeyboard(item));
+  }
+}
+
+async function sendBrokerOrders(event) {
+  const broker = await fetchBrokerPortfolio(event);
+  const orders = Array.isArray(broker.orders) ? broker.orders : [];
+  if (orders.length === 0) {
+    await tgSend('✅ ตอนนี้ไม่พบออเดอร์ในบัญชีโบรกเกอร์');
+    return;
+  }
+  const rows = orders.slice(0, 20).map((item) => {
+    const symbol = item.symbol || item.sym || '-';
+    const side = item.side || '-';
+    const qty = item.quantity || item.qty || item.volume || 0;
+    const price = item.price || item.orderPrice || 0;
+    const status = item.status || item.orderStatus || '-';
+    return `• ${side} ${symbol} ${qty} หุ้น @ ${Number(price || 0).toFixed(2)} — ${status}`;
+  });
+  await tgSend(['📋 ออเดอร์ในบัญชีโบรกเกอร์', ...rows].join('\n'));
+}
+
 async function handleCommand(message, update, event) {
   const text = String(message.text || '').trim();
-  const command = text.split(/\s+/)[0].toLowerCase();
+  const parts = text.split(/\s+/);
+  const command = normalizeCommand(parts[0]);
   const identity = updateIdentity(update);
+
+  if (command === '/start' || command === '/menu' || command === '/help') {
+    await configureCommandMenu();
+    await tgSend(menuText());
+    return;
+  }
 
   if (command === '/version') {
     const info = deploymentInfo();
     await tgSend([
-      '🧪 BOT VERSION',
+      '🧪 เวอร์ชันระบบ',
       `Version: ${info.version}`,
       `Commit: ${String(info.commit).slice(0, 12)}`,
       `Branch: ${info.branch}`,
@@ -266,25 +417,50 @@ async function handleCommand(message, update, event) {
 
   if (command === '/whoami') {
     await tgSend([
-      '👤 TELEGRAM OPERATOR ID',
+      '👤 ข้อมูล Telegram Operator',
       `Chat ID: ${identity.chatId || '-'}`,
       `User ID: ${identity.userId || '-'}`,
       `Chat type: ${identity.chatType || '-'}`,
-      `Operator access: ${isTrustedOperatorChat(update) ? 'READY' : 'BLOCKED'}`,
-      `Order approval: ${isAuthorizedApprover(update) ? 'READY' : 'LOCKED'}`,
+      `ใช้คำสั่งทั่วไป: ${isTrustedOperatorChat(update) ? 'READY' : 'BLOCKED'}`,
+      `อนุมัติเงินจริง: ${isAuthorizedApprover(update) ? 'READY' : 'LOCKED'}`,
       'ไม่มี Secret หรือ Broker Credential ถูกแสดงในข้อความนี้',
     ].join('\n'));
     return;
   }
 
   if (command === '/setup') {
-    await tgSend(`⏳ SETUP ACK — ${APP_VERSION}\nรับคำสั่งแล้ว กำลังอ่านพอร์ตและเตรียมปุ่มจัดหมวด...`);
+    await tgSend(`⏳ รับคำสั่งแล้ว — ${APP_VERSION}\nกำลังอ่านพอร์ตและเตรียมปุ่มจัดหมวด...`);
     await runOnboarding(event, { sendMessages: true });
     return;
   }
 
   if (command === '/portfolio') {
     await sendPortfolioSummary(event);
+    return;
+  }
+
+  if (command === '/plan') {
+    await sendStockPlan(parts[1], event);
+    return;
+  }
+
+  if (command === '/buy') {
+    await createAndSendManualDraft(text, 'BUY', identity, event);
+    return;
+  }
+
+  if (command === '/sell') {
+    await createAndSendManualDraft(text, 'SELL', identity, event);
+    return;
+  }
+
+  if (command === '/pending') {
+    await sendPending(event);
+    return;
+  }
+
+  if (command === '/orders') {
+    await sendBrokerOrders(event);
     return;
   }
 
@@ -313,33 +489,7 @@ async function handleCommand(message, update, event) {
     return;
   }
 
-  if (command === '/pending') {
-    const pending = await listIntents(event, { status: 'PENDING_APPROVAL', limit: 20 });
-    if (pending.length === 0) {
-      await tgSend('✅ ไม่มี Order Intent ที่รออนุมัติ');
-      return;
-    }
-    const rows = pending.slice(0, 10).map((item) =>
-      `• ${item.id} ${item.side} ${item.symbol} ${item.quantity}หุ้น @${Number(item.proposedPrice).toFixed(2)} หมดอายุ ${item.expiresAt}`
-    );
-    await tgSend(['⏳ PENDING ORDER INTENTS', ...rows].join('\n'));
-    return;
-  }
-
-  await tgSend([
-    '🤖 Investment Bot — Operator Console',
-    '/version — ตรวจเวอร์ชันและสถานะสิทธิ์',
-    '/whoami — ตรวจ Telegram Chat/User ID',
-    '/setup — จัดหมวดหุ้น CORE / ACTIVE / REVIEW',
-    '/portfolio — ดูแผนที่พอร์ต',
-    '/readiness — ดูว่าระบบติดตรงไหน',
-    '/backtest — ทดสอบกฎ ACTIVE หลังต้นทุน',
-    '/shadow — อัปเดตพอร์ตเงา',
-    '/core — ตรวจพื้นฐานและ Thesis ของ CORE',
-    '/pending — ดูข้อเสนอที่รออนุมัติ',
-    '',
-    'Decision Plan จะแสดงจำนวน ราคา มูลค่าธุรกิจ และจังหวะกราฟ แต่ยังไม่ใช่ออเดอร์',
-  ].join('\n'));
+  await tgSend(['ไม่รู้จักคำสั่งนี้ค่ะ', '', menuText()].join('\n'));
 }
 
 function requireAdmin(event) {
@@ -361,13 +511,20 @@ exports.handler = async (event) => {
     const host = getHeader(event.headers, 'x-forwarded-host') || getHeader(event.headers, 'host');
     if (!host) return response(400, { error: 'Host header missing' });
     const webhookUrl = `https://${host}/.netlify/functions/telegram`;
-    const result = await tgPost('setWebhook', {
+    const webhook = await tgPost('setWebhook', {
       url: webhookUrl,
       secret_token: WEBHOOK_SECRET,
       allowed_updates: ['message', 'callback_query'],
       drop_pending_updates: false,
       max_connections: 5,
     });
+    const menu = webhook.ok ? await configureCommandMenu() : { ok: false, description: 'webhook_failed' };
+    return response(webhook.ok && menu.ok ? 200 : 502, { webhook, menu });
+  }
+
+  if (action === 'configureMenu') {
+    if (event.httpMethod !== 'POST' || !requireAdmin(event)) return response(401, { error: 'Unauthorized' });
+    const result = await configureCommandMenu();
     return response(result.ok ? 200 : 502, result);
   }
 
@@ -404,7 +561,7 @@ exports.handler = async (event) => {
       await handleCommand(update.message, update, event);
       return response(200, { ok: true, version: APP_VERSION });
     } catch (error) {
-      await tgSend(`🔴 COMMAND ERROR — ${APP_VERSION}\n${error.message}`);
+      await tgSend(`🔴 คำสั่งทำงานไม่สำเร็จ — ${APP_VERSION}\n${error.message}`);
       return response(500, { error: error.message, version: APP_VERSION });
     }
   }
@@ -418,6 +575,10 @@ module.exports._test = {
   updateIdentity,
   isTrustedOperatorChat,
   isAuthorizedApprover,
+  commandDefinitions,
+  menuText,
+  normalizeCommand,
+  parseManualCommand,
   safeEqual,
   getHeader,
   handleClassificationCallback,
