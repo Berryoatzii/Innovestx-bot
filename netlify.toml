@@ -13,6 +13,17 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
 
+# Daily operator readiness — 08:15 BKK on weekdays.
+[functions."bot-readiness"]
+  schedule = "15 1 * * 1-5"
+  node_bundler = "esbuild"
+
+# Portfolio classification reminder — 08:20 BKK on weekdays.
+# It only sends buttons for positions that the operator has not classified.
+[functions."portfolio-onboarding"]
+  schedule = "20 1 * * 1-5"
+  node_bundler = "esbuild"
+
 # AI advisory cycle — every hour from 09:00 to 16:00 BKK on weekdays.
 # It can only explain observations. It creates zero order intents and places zero orders.
 [functions."autotrade"]
@@ -29,6 +40,12 @@
 # It checks verified fundamentals and approved thesis cards; it creates no orders.
 [functions."core-review"]
   schedule = "15 11 * * 1"
+  node_bundler = "esbuild"
+
+# ACTIVE backtest refresh — Friday 18:45 BKK.
+# It uses next-bar execution and after-cost metrics; it creates no orders.
+[functions."research-backtest"]
+  schedule = "45 11 * * 5"
   node_bundler = "esbuild"
 
 # Read-only reconciliation every 10 minutes from 10:00 to 16:50 BKK.
