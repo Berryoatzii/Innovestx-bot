@@ -11,6 +11,10 @@ const ORDER_INTENT_GATE_SECRET = process.env.ORDER_INTENT_GATE_SECRET || '';
 const LIVE_TRADING_ENABLED = process.env.LIVE_TRADING_ENABLED === 'true';
 const HUMAN_APPROVAL_ONLY = process.env.HUMAN_APPROVAL_ONLY !== 'false';
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'null';
+const ALLOWED_DECISION_AUTHORITIES = new Set([
+  'DETERMINISTIC_RULES_PLUS_HUMAN_APPROVAL',
+  'HUMAN_OPERATOR_LIMIT_DRAFT_PLUS_RISK_APPROVAL',
+]);
 
 const BASE_HEADERS = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
@@ -107,21 +111,30 @@ async function validateIntentBinding(event, intentId, suppliedSignature) {
   const expected = expectedIntentSignature(intentId, rawBody);
   if (!safeEqual(suppliedSignature, expected)) throw new Error('INVALID_ORDER_INTENT_SIGNATURE');
 
-  const intent = await getIntent(intentId, event);
+  // Money-moving binding must see the exact latest state or fail closed.
+  const intent = await getIntent(intentId, event, { requireStrong: true });
   if (!intent) throw new Error('ORDER_INTENT_NOT_FOUND');
   if (intent.status !== 'APPROVING') throw new Error(`ORDER_INTENT_NOT_APPROVING:${intent.status}`);
   if (intent.portfolioBucket !== 'ACTIVE') throw new Error('ORDER_INTENT_BUCKET_NOT_ACTIVE');
-  if (intent.decisionAuthority !== 'DETERMINISTIC_RULES_PLUS_HUMAN_APPROVAL') {
+  if (!ALLOWED_DECISION_AUTHORITIES.has(intent.decisionAuthority)) {
     throw new Error('ORDER_INTENT_AUTHORITY_INVALID');
   }
   if (intent.symbol !== order.symbol || intent.side !== order.side || Number(intent.quantity) !== order.quantity) {
     throw new Error('ORDER_BODY_DOES_NOT_MATCH_INTENT');
   }
 
-  const maxDriftPct = Number(process.env.MAX_PRICE_DRIFT_PCT || 0.02);
-  const driftPct = Math.abs(order.price - Number(intent.proposedPrice)) / Number(intent.proposedPrice);
-  if (!Number.isFinite(driftPct) || driftPct > maxDriftPct) throw new Error('SIGNED_ORDER_PRICE_DRIFT_EXCEEDED');
-  return { intent, order, driftPct };
+  const orderStyle = String(intent.orderStyle || 'MARKETABLE_LIMIT').toUpperCase();
+  let driftPct = 0;
+  if (orderStyle === 'RESTING_LIMIT') {
+    if (Math.abs(order.price - Number(intent.proposedPrice)) > 0.0001) {
+      throw new Error('RESTING_LIMIT_PRICE_DOES_NOT_MATCH_INTENT');
+    }
+  } else {
+    const maxDriftPct = Number(process.env.MAX_PRICE_DRIFT_PCT || 0.02);
+    driftPct = Math.abs(order.price - Number(intent.proposedPrice)) / Number(intent.proposedPrice);
+    if (!Number.isFinite(driftPct) || driftPct > maxDriftPct) throw new Error('SIGNED_ORDER_PRICE_DRIFT_EXCEEDED');
+  }
+  return { intent, order, driftPct, orderStyle };
 }
 
 exports.handler = async (event) => {
@@ -192,6 +205,7 @@ exports.handler = async (event) => {
 };
 
 module.exports._test = {
+  ALLOWED_DECISION_AUTHORITIES,
   safeEqual,
   expectedIntentSignature,
   signaturePayload,

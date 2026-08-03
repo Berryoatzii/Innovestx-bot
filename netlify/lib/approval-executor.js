@@ -9,6 +9,11 @@ const {
   isExpired,
 } = require('./order-intent-store');
 
+const ALLOWED_DECISION_AUTHORITIES = new Set([
+  'DETERMINISTIC_RULES_PLUS_HUMAN_APPROVAL',
+  'HUMAN_OPERATOR_LIMIT_DRAFT_PLUS_RISK_APPROVAL',
+]);
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -146,11 +151,26 @@ function validateMarketData(intent, quote) {
   const maxSpreadPct = numberEnv('MAX_SPREAD_PCT', 0.03);
   if (spreadPct > maxSpreadPct) throw new Error(`SPREAD_TOO_WIDE:${spreadPct.toFixed(4)}`);
 
-  const executionPrice = intent.side === 'SELL' ? bid : ask;
-  const driftPct = Math.abs(executionPrice - intent.proposedPrice) / intent.proposedPrice;
-  const maxDriftPct = numberEnv('MAX_PRICE_DRIFT_PCT', 0.02);
-  if (driftPct > maxDriftPct) throw new Error(`PRICE_DRIFT_TOO_HIGH:${driftPct.toFixed(4)}`);
-  return { last, bid, ask, spreadPct, driftPct, executionPrice };
+  const orderStyle = String(intent.orderStyle || 'MARKETABLE_LIMIT').toUpperCase();
+  let executionPrice;
+  let driftPct;
+
+  if (orderStyle === 'RESTING_LIMIT') {
+    executionPrice = Number(intent.proposedPrice || 0);
+    if (executionPrice <= 0) throw new Error('RESTING_LIMIT_PRICE_INVALID');
+    driftPct = Math.abs(executionPrice - last) / last;
+    const maxDistancePct = numberEnv('MAX_RESTING_LIMIT_DISTANCE_PCT', 0.15);
+    if (driftPct > maxDistancePct) {
+      throw new Error(`RESTING_LIMIT_TOO_FAR:${driftPct.toFixed(4)}`);
+    }
+  } else {
+    executionPrice = intent.side === 'SELL' ? bid : ask;
+    driftPct = Math.abs(executionPrice - intent.proposedPrice) / intent.proposedPrice;
+    const maxDriftPct = numberEnv('MAX_PRICE_DRIFT_PCT', 0.02);
+    if (driftPct > maxDriftPct) throw new Error(`PRICE_DRIFT_TOO_HIGH:${driftPct.toFixed(4)}`);
+  }
+
+  return { last, bid, ask, spreadPct, driftPct, executionPrice, orderStyle };
 }
 
 function portfolioMarketValue(portfolio) {
@@ -166,7 +186,10 @@ async function preflightIntent(intent, event) {
   if (!session.open) throw new Error(`MARKET_NOT_IN_CONTINUOUS_SESSION:${session.reason}`);
   if (isExpired(intent)) throw new Error('INTENT_EXPIRED');
   if (!['SELL', 'BUY'].includes(intent.side)) throw new Error('UNSUPPORTED_SIDE');
-  if (intent.portfolioBucket !== 'ACTIVE') throw new Error('ONLY_ACTIVE_RULES_INTENTS_ALLOWED');
+  if (intent.portfolioBucket !== 'ACTIVE') throw new Error('ONLY_ACTIVE_INTENTS_ALLOWED');
+  if (!ALLOWED_DECISION_AUTHORITIES.has(intent.decisionAuthority)) {
+    throw new Error('INTENT_DECISION_AUTHORITY_NOT_ALLOWED');
+  }
 
   const dataResponse = await callInvx({ action: 'getData', event });
   if (dataResponse.statusCode !== 200) throw new Error(`PORTFOLIO_FETCH_FAILED:${dataResponse.statusCode}`);
@@ -304,6 +327,7 @@ async function executeApprovedIntent(intentId, approver, event) {
       submittedPrice: preflight.market.executionPrice,
       submittedValue: preflight.submittedValue,
       responseStatus: orderResponse.statusCode,
+      orderStyle: preflight.market.orderStyle,
     },
   }, { event, actor: 'execution-engine' });
 
@@ -348,6 +372,7 @@ async function rejectIntent(intentId, approver, event) {
 }
 
 module.exports = {
+  ALLOWED_DECISION_AUTHORITIES,
   approvalAvailability,
   isThaiContinuousSession,
   validateMarketData,
