@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { handler: advancedTelegramHandler } = require('./telegram');
+const { handler: advancedTelegramHandler } = require('./telegram-advanced');
 const { runOnboarding } = require('./portfolio-onboarding');
 const {
   EASY_VERSION,
@@ -115,8 +115,8 @@ async function handleEasyCallback(update, event) {
       '',
       'จากนี้ไม่ต้องพิมพ์คำสั่งซื้อขายเอง',
       'บอทจะวิเคราะห์ตามรอบตลาด และส่งเฉพาะรายการพร้อมปุ่มยืนยันมาให้ค่ะ',
+      'การจัดหมวดอาจใช้เวลาซิงก์ไม่เกินประมาณ 1 นาที',
     ].join('\n'));
-    await runEasyAdvisor(event, { sendMessages: true });
     return true;
   }
 
