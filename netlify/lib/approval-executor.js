@@ -64,10 +64,34 @@ function isThaiContinuousSession(date = new Date()) {
   return isContinuousSession(date).open;
 }
 
-function intentGateSignature(intentId) {
+function normalizeSignedOrderBody(body = {}) {
+  const rawSide = String(body.side || '').toUpperCase();
+  const side = rawSide.startsWith('B') ? 'BUY' : rawSide.startsWith('S') ? 'SELL' : rawSide;
+  return {
+    symbol: String(body.ticker || body.symbol || '').toUpperCase().trim(),
+    side,
+    quantity: Math.floor(Number(body.quantity || body.qty || body.volume || 0)),
+    price: Number(body.price || 0),
+  };
+}
+
+function signaturePayload(intentId, orderBody = {}) {
+  const normalized = normalizeSignedOrderBody(orderBody);
+  return [
+    String(intentId || '').toLowerCase(),
+    normalized.symbol,
+    normalized.side,
+    String(normalized.quantity),
+    Number(normalized.price || 0).toFixed(4),
+  ].join('|');
+}
+
+function intentGateSignature(intentId, orderBody = {}) {
   const secret = process.env.ORDER_INTENT_GATE_SECRET || '';
   if (!secret) throw new Error('ORDER_INTENT_GATE_SECRET_NOT_CONFIGURED');
-  return crypto.createHmac('sha256', secret).update(String(intentId)).digest('hex');
+  return crypto.createHmac('sha256', secret)
+    .update(signaturePayload(intentId, orderBody))
+    .digest('hex');
 }
 
 async function callInvx({ action, method = 'GET', body = null, query = {}, intentId = null, event = null }) {
@@ -76,7 +100,7 @@ async function callInvx({ action, method = 'GET', body = null, query = {}, inten
     headers['x-admin-token'] = process.env.ADMIN_TOKEN || '';
     headers['x-execute-confirmation'] = process.env.EXECUTE_CONFIRMATION || '';
     headers['x-order-intent-id'] = intentId || '';
-    headers['x-order-intent-signature'] = intentGateSignature(intentId);
+    headers['x-order-intent-signature'] = intentGateSignature(intentId, body || {});
   }
 
   const response = await secureInvxHandler({
@@ -126,7 +150,6 @@ function validateMarketData(intent, quote) {
   const driftPct = Math.abs(executionPrice - intent.proposedPrice) / intent.proposedPrice;
   const maxDriftPct = numberEnv('MAX_PRICE_DRIFT_PCT', 0.02);
   if (driftPct > maxDriftPct) throw new Error(`PRICE_DRIFT_TOO_HIGH:${driftPct.toFixed(4)}`);
-
   return { last, bid, ask, spreadPct, driftPct, executionPrice };
 }
 
@@ -333,5 +356,12 @@ module.exports = {
   preflightIntent,
   executeApprovedIntent,
   rejectIntent,
-  _test: { bkkClock, intentGateSignature, normalizeOrderSide, brokerStatusToIntentStatus },
+  _test: {
+    bkkClock,
+    intentGateSignature,
+    signaturePayload,
+    normalizeSignedOrderBody,
+    normalizeOrderSide,
+    brokerStatusToIntentStatus,
+  },
 };
