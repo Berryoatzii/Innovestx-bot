@@ -28,6 +28,12 @@ function normalizeSide(side) {
   return value;
 }
 
+function normalizeOrderStyle(style) {
+  const value = String(style || 'MARKETABLE_LIMIT').toUpperCase();
+  if (!['MARKETABLE_LIMIT', 'RESTING_LIMIT'].includes(value)) throw new Error('INVALID_ORDER_STYLE');
+  return value;
+}
+
 function calculateProposalQuantity({
   positionQty,
   price,
@@ -81,10 +87,11 @@ function intentIdFromKey(idempotencyKey) {
 
 function buildIntent(input, options = {}) {
   const createdAt = options.createdAt || nowIso(options.now || new Date());
-  const ttlMinutes = Math.max(5, Math.min(120, Number(options.ttlMinutes || 45)));
+  const ttlMinutes = Math.max(5, Math.min(180, Number(options.ttlMinutes || 45)));
   const expiresAt = options.expiresAt || new Date(new Date(createdAt).getTime() + ttlMinutes * 60 * 1000).toISOString();
   const symbol = normalizeSymbol(input.symbol || input.sym);
   const side = normalizeSide(input.side);
+  const orderStyle = normalizeOrderStyle(input.orderStyle);
   const quantity = Math.floor(Number(input.quantity || input.qty || 0));
   const proposedPrice = Number(input.proposedPrice || input.price || input.mkt || 0);
   const portfolioQty = Math.max(0, Math.floor(Number(input.portfolioQty || input.positionQty || 0)));
@@ -96,12 +103,13 @@ function buildIntent(input, options = {}) {
   if (side === 'SELL' && portfolioQty <= quantity) throw new Error('FULL_POSITION_EXIT_NOT_ALLOWED');
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id,
     idempotencyKey: String(input.idempotencyKey),
     status: 'PENDING_APPROVAL',
     symbol,
     side,
+    orderStyle,
     quantity,
     proposedPrice,
     estimatedValue: Number((quantity * proposedPrice).toFixed(2)),
@@ -174,7 +182,6 @@ function canTransition(from, to) {
 
 async function transitionIntent(id, expectedStatuses, nextStatus, patch = {}, options = {}) {
   const expected = new Set(Array.isArray(expectedStatuses) ? expectedStatuses : [expectedStatuses]);
-  // Money-moving state changes require strong consistency. Never downgrade.
   const record = await getIntentWithMetadata(id, options.event, { requireStrong: true });
   if (!record) throw new Error('INTENT_NOT_FOUND');
   const current = record.data;
@@ -255,5 +262,5 @@ module.exports = {
   getDailyExecutionStats,
   isExpired,
   canTransition,
-  _test: { normalizeSymbol, normalizeSide, intentIdFromKey, intentKey },
+  _test: { normalizeSymbol, normalizeSide, normalizeOrderStyle, intentIdFromKey, intentKey },
 };
