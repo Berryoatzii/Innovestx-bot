@@ -25,8 +25,8 @@ test('Telegram health probe responds without Blobs or broker access', async () =
   assert.equal(result.statusCode, 200);
   const payload = JSON.parse(result.body);
   assert.equal(payload.ok, true);
-  assert.equal(payload.version, '8.4.2-deploy-probe');
+  assert.equal(payload.version, '8.5.0-action-plan');
   assert.equal(payload.blobInitialization, 'lazy');
   assert.equal(payload.liveTradingEnabled, false);
-  assert.equal(_test.APP_VERSION, '8.4.2-deploy-probe');
+  assert.equal(_test.APP_VERSION, '8.5.0-action-plan');
 });
