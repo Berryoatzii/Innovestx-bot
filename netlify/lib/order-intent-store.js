@@ -1,29 +1,15 @@
 const crypto = require('crypto');
+const { openBlobStore } = require('./blob-runtime');
 
 const STORE_NAME = 'order-intents-v1';
 const INTENT_PREFIX = 'intent/';
-let blobsModulePromise = null;
-let blobContextInitialized = false;
-
-function loadBlobsModule() {
-  if (!blobsModulePromise) blobsModulePromise = import('@netlify/blobs');
-  return blobsModulePromise;
-}
 
 async function initializeBlobContext(event) {
-  if (blobContextInitialized) return;
-  const mod = await loadBlobsModule();
-  if (typeof mod.connectLambda === 'function' && event) {
-    try { mod.connectLambda(event); }
-    catch (error) { console.warn('[intent-store] connectLambda skipped:', error.message); }
-  }
-  blobContextInitialized = true;
+  return openBlobStore(STORE_NAME, { event, consistency: 'eventual' });
 }
 
-async function getIntentStore(event) {
-  await initializeBlobContext(event);
-  const { getStore } = await loadBlobsModule();
-  return getStore({ name: STORE_NAME, consistency: 'strong' });
+async function getIntentStore(event, consistency = 'eventual') {
+  return openBlobStore(STORE_NAME, { event, consistency });
 }
 
 function nowIso(now = new Date()) {
@@ -146,7 +132,7 @@ function intentKey(id) {
 async function createIntent(input, options = {}) {
   const intent = buildIntent(input, options);
   const key = intentKey(intent.id);
-  const store = await getIntentStore(options.event);
+  const store = await getIntentStore(options.event, 'prefer-strong');
   try {
     await store.set(key, JSON.stringify(intent), {
       onlyIfNew: true,
@@ -154,21 +140,22 @@ async function createIntent(input, options = {}) {
     });
     return { intent, created: true };
   } catch (error) {
-    const existing = await store.get(key, { type: 'json', consistency: 'strong' });
+    const existing = await store.get(key, { type: 'json' });
     if (existing) return { intent: existing, created: false };
     throw error;
   }
 }
 
-async function getIntentWithMetadata(id, event) {
-  const store = await getIntentStore(event);
-  const record = await store.getWithMetadata(intentKey(id), { type: 'json', consistency: 'strong' });
+async function getIntentWithMetadata(id, event, options = {}) {
+  const consistency = options.requireStrong === true ? 'strong' : 'eventual';
+  const store = await getIntentStore(event, consistency);
+  const record = await store.getWithMetadata(intentKey(id), { type: 'json' });
   if (!record) return null;
   return { ...record, key: intentKey(id), store };
 }
 
-async function getIntent(id, event) {
-  const record = await getIntentWithMetadata(id, event);
+async function getIntent(id, event, options = {}) {
+  const record = await getIntentWithMetadata(id, event, options);
   return record ? record.data : null;
 }
 
@@ -187,7 +174,8 @@ function canTransition(from, to) {
 
 async function transitionIntent(id, expectedStatuses, nextStatus, patch = {}, options = {}) {
   const expected = new Set(Array.isArray(expectedStatuses) ? expectedStatuses : [expectedStatuses]);
-  const record = await getIntentWithMetadata(id, options.event);
+  // Money-moving state changes require strong consistency. Never downgrade.
+  const record = await getIntentWithMetadata(id, options.event, { requireStrong: true });
   if (!record) throw new Error('INTENT_NOT_FOUND');
   const current = record.data;
 
@@ -224,12 +212,12 @@ async function transitionIntent(id, expectedStatuses, nextStatus, patch = {}, op
 }
 
 async function listIntents(event, { status, limit = 200 } = {}) {
-  const store = await getIntentStore(event);
+  const store = await getIntentStore(event, 'eventual');
   const { blobs } = await store.list({ prefix: INTENT_PREFIX });
   const selected = blobs.slice(-Math.max(1, Math.min(1000, limit)));
   const rows = [];
   for (const blob of selected) {
-    const item = await store.get(blob.key, { type: 'json', consistency: 'strong' });
+    const item = await store.get(blob.key, { type: 'json' });
     if (!item) continue;
     if (status && item.status !== status) continue;
     rows.push(item);
