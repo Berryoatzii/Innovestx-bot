@@ -30,6 +30,12 @@
   schedule = "0 2-9 * * 1-5"
   node_bundler = "esbuild"
 
+# Evidence-gated deterministic proposals — 10:15 and 14:15 BKK on weekdays.
+# It may create expiring human-approval intents only after backtest and shadow gates pass.
+[functions."rules-proposals"]
+  schedule = "15 3,7 * * 1-5"
+  node_bundler = "esbuild"
+
 # Rules-only post-close shadow research — 17:30 BKK on weekdays.
 # It updates a virtual portfolio and evidence ledger only.
 [functions."strategy-shadow"]
