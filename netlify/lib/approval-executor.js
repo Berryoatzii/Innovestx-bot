@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { handler: secureInvxHandler } = require('../functions/invx');
 const { fetchRawOrders } = require('./settrade-read');
+const { isContinuousSession } = require('./market-calendar');
 const {
   getIntent,
   transitionIntent,
@@ -60,16 +61,37 @@ function bkkClock(date = new Date()) {
 }
 
 function isThaiContinuousSession(date = new Date()) {
-  const { weekday, minutes } = bkkClock(date);
-  if (weekday < 1 || weekday > 5) return false;
-  return (minutes >= 10 * 60 + 5 && minutes <= 12 * 60 + 25) ||
-    (minutes >= 14 * 60 + 5 && minutes <= 16 * 60 + 20);
+  return isContinuousSession(date).open;
 }
 
-function intentGateSignature(intentId) {
+function normalizeSignedOrderBody(body = {}) {
+  const rawSide = String(body.side || '').toUpperCase();
+  const side = rawSide.startsWith('B') ? 'BUY' : rawSide.startsWith('S') ? 'SELL' : rawSide;
+  return {
+    symbol: String(body.ticker || body.symbol || '').toUpperCase().trim(),
+    side,
+    quantity: Math.floor(Number(body.quantity || body.qty || body.volume || 0)),
+    price: Number(body.price || 0),
+  };
+}
+
+function signaturePayload(intentId, orderBody = {}) {
+  const normalized = normalizeSignedOrderBody(orderBody);
+  return [
+    String(intentId || '').toLowerCase(),
+    normalized.symbol,
+    normalized.side,
+    String(normalized.quantity),
+    Number(normalized.price || 0).toFixed(4),
+  ].join('|');
+}
+
+function intentGateSignature(intentId, orderBody = {}) {
   const secret = process.env.ORDER_INTENT_GATE_SECRET || '';
   if (!secret) throw new Error('ORDER_INTENT_GATE_SECRET_NOT_CONFIGURED');
-  return crypto.createHmac('sha256', secret).update(String(intentId)).digest('hex');
+  return crypto.createHmac('sha256', secret)
+    .update(signaturePayload(intentId, orderBody))
+    .digest('hex');
 }
 
 async function callInvx({ action, method = 'GET', body = null, query = {}, intentId = null, event = null }) {
@@ -78,7 +100,7 @@ async function callInvx({ action, method = 'GET', body = null, query = {}, inten
     headers['x-admin-token'] = process.env.ADMIN_TOKEN || '';
     headers['x-execute-confirmation'] = process.env.EXECUTE_CONFIRMATION || '';
     headers['x-order-intent-id'] = intentId || '';
-    headers['x-order-intent-signature'] = intentGateSignature(intentId);
+    headers['x-order-intent-signature'] = intentGateSignature(intentId, body || {});
   }
 
   const response = await secureInvxHandler({
@@ -128,21 +150,28 @@ function validateMarketData(intent, quote) {
   const driftPct = Math.abs(executionPrice - intent.proposedPrice) / intent.proposedPrice;
   const maxDriftPct = numberEnv('MAX_PRICE_DRIFT_PCT', 0.02);
   if (driftPct > maxDriftPct) throw new Error(`PRICE_DRIFT_TOO_HIGH:${driftPct.toFixed(4)}`);
-
   return { last, bid, ask, spreadPct, driftPct, executionPrice };
+}
+
+function portfolioMarketValue(portfolio) {
+  return (Array.isArray(portfolio) ? portfolio : []).reduce((sum, item) => {
+    return sum + Number(item.qty || 0) * Number(item.mkt || 0);
+  }, 0);
 }
 
 async function preflightIntent(intent, event) {
   const availability = approvalAvailability();
   if (!availability.ready) throw new Error(`LIVE_APPROVAL_NOT_READY:${JSON.stringify(availability)}`);
-  if (!isThaiContinuousSession()) throw new Error('MARKET_NOT_IN_CONTINUOUS_SESSION');
+  const session = isContinuousSession(new Date());
+  if (!session.open) throw new Error(`MARKET_NOT_IN_CONTINUOUS_SESSION:${session.reason}`);
   if (isExpired(intent)) throw new Error('INTENT_EXPIRED');
   if (!['SELL', 'BUY'].includes(intent.side)) throw new Error('UNSUPPORTED_SIDE');
-  if (intent.portfolioBucket === 'CORE') throw new Error('CORE_POSITION_REQUIRES_THESIS_BREAK_REVIEW');
+  if (intent.portfolioBucket !== 'ACTIVE') throw new Error('ONLY_ACTIVE_RULES_INTENTS_ALLOWED');
 
   const dataResponse = await callInvx({ action: 'getData', event });
   if (dataResponse.statusCode !== 200) throw new Error(`PORTFOLIO_FETCH_FAILED:${dataResponse.statusCode}`);
   const portfolio = Array.isArray(dataResponse.payload.portfolio) ? dataResponse.payload.portfolio : [];
+  const cash = Number(dataResponse.payload.cash || 0);
   const position = portfolio.find((item) => String(item.sym || '').toUpperCase() === intent.symbol);
 
   if (intent.side === 'SELL') {
@@ -164,6 +193,18 @@ async function preflightIntent(intent, event) {
   const maxOrderValue = numberEnv('MAX_LIVE_ORDER_VALUE', 0);
   if (maxOrderValue <= 0 || submittedValue > maxOrderValue) throw new Error('ORDER_VALUE_LIMIT_EXCEEDED');
 
+  if (intent.side === 'BUY') {
+    const reserve = Math.max(0, numberEnv('MIN_LIVE_CASH_RESERVE', 5000));
+    const estimatedCostBuffer = submittedValue * 0.01;
+    if (cash - submittedValue - estimatedCostBuffer < reserve) throw new Error('CASH_RESERVE_WOULD_BE_BREACHED');
+
+    const totalMarketValue = portfolioMarketValue(portfolio) + cash;
+    const currentValue = position ? Number(position.qty || 0) * Number(position.mkt || 0) : 0;
+    const postTradeWeight = totalMarketValue > 0 ? (currentValue + submittedValue) / totalMarketValue : 1;
+    const maxPositionWeight = numberEnv('MAX_LIVE_ACTIVE_POSITION_WEIGHT', 0.05);
+    if (postTradeWeight > maxPositionWeight) throw new Error(`ACTIVE_POSITION_WEIGHT_LIMIT:${postTradeWeight.toFixed(4)}`);
+  }
+
   const dailyStats = await getDailyExecutionStats(event, new Date());
   const maxDailyOrders = Math.max(1, Math.floor(numberEnv('MAX_DAILY_APPROVED_ORDERS', 1)));
   const maxDailyNotional = numberEnv('MAX_DAILY_APPROVED_NOTIONAL', 0);
@@ -172,7 +213,7 @@ async function preflightIntent(intent, event) {
     throw new Error('DAILY_NOTIONAL_LIMIT');
   }
 
-  return { position, rawOrders, market, submittedValue, dailyStats };
+  return { position, portfolio, cash, rawOrders, market, submittedValue, dailyStats };
 }
 
 function brokerStatusToIntentStatus(status) {
@@ -311,8 +352,16 @@ module.exports = {
   isThaiContinuousSession,
   validateMarketData,
   hasDuplicateOpenOrder,
+  portfolioMarketValue,
   preflightIntent,
   executeApprovedIntent,
   rejectIntent,
-  _test: { bkkClock, intentGateSignature, normalizeOrderSide, brokerStatusToIntentStatus },
+  _test: {
+    bkkClock,
+    intentGateSignature,
+    signaturePayload,
+    normalizeSignedOrderBody,
+    normalizeOrderSide,
+    brokerStatusToIntentStatus,
+  },
 };

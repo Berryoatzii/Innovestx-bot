@@ -1,5 +1,5 @@
-// Secure Telegram approval bot.
-// No AI analysis, demo portfolio, or direct broker API calls live here.
+// Secure Telegram operator and approval bot.
+// Classification, research and readiness are operator workflows; broker mutations remain intent-gated.
 
 const crypto = require('crypto');
 const {
@@ -11,6 +11,17 @@ const {
   executeApprovedIntent,
   rejectIntent,
 } = require('../lib/approval-executor');
+const {
+  setClassification,
+  classificationMap,
+  summarizeClassifications,
+} = require('../lib/portfolio-classification-store');
+const { fetchBrokerPortfolio } = require('../lib/broker-portfolio');
+const { runOnboarding } = require('./portfolio-onboarding');
+const { buildBotReadiness, readinessText } = require('../lib/bot-readiness');
+const { runResearchBacktests } = require('./research-backtest');
+const { runStrategyShadow } = require('./strategy-shadow');
+const { runCoreReview } = require('./core-review');
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '');
@@ -48,7 +59,8 @@ function tgPost(method, data) {
     body: JSON.stringify(data),
   }).then(async (res) => {
     let payload = {};
-    try { payload = await res.json(); } catch { payload = { ok: false, description: `HTTP ${res.status}` }; }
+    try { payload = await res.json(); }
+    catch { payload = { ok: false, description: `HTTP ${res.status}` }; }
     return payload;
   }).catch((error) => ({ ok: false, description: error.message }));
 }
@@ -83,13 +95,40 @@ function isAuthorizedTelegramUpdate(update) {
   return Boolean(TG_CHAT_ID && APPROVER_USER_ID && chatId === TG_CHAT_ID && userId === APPROVER_USER_ID);
 }
 
+async function handleClassificationCallback(callback, event) {
+  const match = /^CLS:(C|A|R):([A-Z0-9._-]{1,20})$/i.exec(String(callback.data || ''));
+  if (!match) return false;
+  const bucketMap = { C: 'CORE', A: 'ACTIVE', R: 'REVIEW' };
+  const bucket = bucketMap[match[1].toUpperCase()];
+  const symbol = match[2].toUpperCase();
+  const actor = actorFromCallback(callback);
+
+  try {
+    const saved = await setClassification(symbol, bucket, {
+      event,
+      actor,
+      note: 'Confirmed through Telegram operator console',
+    });
+    await answerCallback(callback.id, `บันทึก ${symbol} เป็น ${bucket} แล้ว`);
+    await tgSend([
+      `✅ CLASSIFIED ${saved.symbol}`,
+      `หมวด: ${saved.bucket}`,
+      saved.bucket === 'CORE'
+        ? 'ขั้นถัดไป: ต้องมี Fundamental Snapshot + Thesis Card ก่อนซื้อเพิ่ม'
+        : saved.bucket === 'ACTIVE'
+          ? 'ขั้นถัดไป: ระบบจะทำ Backtest และ Shadow ตามกฎ'
+          : 'สถานะ: ยังไม่อนุญาตให้สร้างข้อเสนอซื้อขาย',
+    ].join('\n'));
+    await runOnboarding(event, { sendMessages: true, batchSize: 1 });
+  } catch (error) {
+    await answerCallback(callback.id, error.message, true);
+  }
+  return true;
+}
+
 async function handleApprovalCallback(callback, event) {
   const match = /^(APV|REJ):([a-f0-9]{16})$/i.exec(String(callback.data || ''));
-  if (!match) {
-    await answerCallback(callback.id, 'คำสั่งไม่ถูกต้อง', true);
-    return;
-  }
-
+  if (!match) return false;
   const [, action, intentId] = match;
   const actor = actorFromCallback(callback);
 
@@ -105,11 +144,10 @@ async function handleApprovalCallback(callback, event) {
     } catch (error) {
       await answerCallback(callback.id, error.message, true);
     }
-    return;
+    return true;
   }
 
   await answerCallback(callback.id, 'รับคำขออนุมัติ กำลังตรวจซ้ำ...');
-
   try {
     const result = await executeApprovedIntent(intentId, actor, event);
     if (result.status === 'LIVE_LOCKED') {
@@ -117,11 +155,9 @@ async function handleApprovalCallback(callback, event) {
         `🔒 APPROVAL RECEIVED [${intentId}]`,
         'ระบบรับทราบการกดอนุมัติ แต่ยังไม่ได้ส่งออเดอร์',
         'เหตุผล: Live Pilot ยังล็อกหรือวงเงินความเสี่ยงยังไม่ครบ',
-        'Intent ยังคงรออนุมัติและจะหมดอายุตามเวลาที่กำหนด',
       ].join('\n'));
-      return;
+      return true;
     }
-
     if (!result.executed) {
       await tgSend([
         `🛑 ORDER BLOCKED [${intentId}]`,
@@ -129,9 +165,8 @@ async function handleApprovalCallback(callback, event) {
         `เหตุผล: ${result.error || 'ไม่ผ่าน Risk/Execution Gate'}`,
         'ไม่มีการส่งคำสั่งซ้ำอัตโนมัติ',
       ].join('\n'));
-      return;
+      return true;
     }
-
     const intent = result.intent;
     await tgSend([
       `✅ ORDER SUBMITTED [${intent.id}]`,
@@ -150,26 +185,69 @@ async function handleApprovalCallback(callback, event) {
       'ไม่มีการส่งคำสั่งซ้ำอัตโนมัติ',
     ].join('\n'));
   }
+  return true;
+}
+
+async function sendPortfolioSummary(event) {
+  const broker = await fetchBrokerPortfolio(event);
+  const map = await classificationMap(event);
+  const summary = summarizeClassifications(broker.portfolio, map);
+  const rows = summary.rows.map((item) => {
+    const position = broker.portfolio.find((row) => String(row.sym || row.symbol).toUpperCase() === item.symbol) || {};
+    const value = Number(position.qty || 0) * Number(position.mkt || 0);
+    return `${item.bucket === 'CORE' ? '🏛' : item.bucket === 'ACTIVE' ? '⚡' : '📝'} ${item.symbol} — ${item.bucket} — ${value.toLocaleString('th-TH', { maximumFractionDigits: 0 })}บ.`;
+  });
+  await tgSend([
+    '💼 PORTFOLIO MAP',
+    `CORE ${summary.counts.CORE} | ACTIVE ${summary.counts.ACTIVE} | REVIEW ${summary.counts.REVIEW}`,
+    `ยังไม่ยืนยัน ${summary.counts.UNCLASSIFIED} ตัว`,
+    `เงินสดจากบัญชี: ${Number(broker.cash || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`,
+    '',
+    ...rows.slice(0, 30),
+  ].join('\n'));
 }
 
 async function handleCommand(message, event) {
-  const text = String(message.text || '').trim().toLowerCase();
+  const text = String(message.text || '').trim();
+  const command = text.split(/\s+/)[0].toLowerCase();
 
-  if (text === '/status') {
-    const availability = approvalAvailability();
-    const pending = await listIntents(event, { status: 'PENDING_APPROVAL', limit: 100 });
-    await tgSend([
-      '📊 BOT STATUS',
-      `Pending approvals: ${pending.length}`,
-      `Live trading: ${availability.liveTradingEnabled ? 'ON' : 'OFF'}`,
-      `Human approval execution: ${availability.humanApprovalEnabled ? 'ON' : 'OFF'}`,
-      `Risk limits configured: ${availability.maxOrderValue > 0 && availability.maxDailyNotional > 0 ? 'YES' : 'NO'}`,
-      `Approval engine ready: ${availability.ready ? 'YES' : 'NO'}`,
-    ].join('\n'));
+  if (command === '/setup') {
+    await tgSend('⏳ กำลังอ่านพอร์ตและเตรียมปุ่มจัดหมวด...');
+    await runOnboarding(event, { sendMessages: true });
     return;
   }
 
-  if (text === '/pending') {
+  if (command === '/portfolio') {
+    await sendPortfolioSummary(event);
+    return;
+  }
+
+  if (command === '/readiness' || command === '/status') {
+    const readiness = await buildBotReadiness(event);
+    await tgSend(readinessText(readiness));
+    return;
+  }
+
+  if (command === '/backtest') {
+    await tgSend('⏳ กำลังรัน Backtest สำหรับหุ้น ACTIVE หลังหักต้นทุน...');
+    await runResearchBacktests(event, { sendTelegram: true });
+    return;
+  }
+
+  if (command === '/shadow') {
+    await tgSend('⏳ กำลังอัปเดตพอร์ตเงาด้วย Rules-only Engine...');
+    const result = await runStrategyShadow(event, { sendTelegram: true, force: true });
+    if (result.skipped) await tgSend(`⏭ Shadow ข้ามรอบ: ${result.reason}`);
+    return;
+  }
+
+  if (command === '/core') {
+    await tgSend('⏳ กำลังตรวจ CORE Fundamental + Thesis...');
+    await runCoreReview(event, { sendTelegram: true });
+    return;
+  }
+
+  if (command === '/pending') {
     const pending = await listIntents(event, { status: 'PENDING_APPROVAL', limit: 20 });
     if (pending.length === 0) {
       await tgSend('✅ ไม่มี Order Intent ที่รออนุมัติ');
@@ -183,10 +261,16 @@ async function handleCommand(message, event) {
   }
 
   await tgSend([
-    '🤖 Investment Bot — Human Approval Mode',
-    '/status — ดูสถานะ Safety/Approval',
+    '🤖 Investment Bot — Operator Console',
+    '/setup — จัดหมวดหุ้น CORE / ACTIVE / REVIEW',
+    '/portfolio — ดูแผนที่พอร์ต',
+    '/readiness — ดูว่าระบบติดตรงไหน',
+    '/backtest — ทดสอบกฎ ACTIVE หลังต้นทุน',
+    '/shadow — อัปเดตพอร์ตเงา',
+    '/core — ตรวจพื้นฐานและ Thesis ของ CORE',
     '/pending — ดูข้อเสนอที่รออนุมัติ',
-    'การซื้อขายจริงเกิดได้เฉพาะจากปุ่มอนุมัติของ Intent ที่ยังไม่หมดอายุ',
+    '',
+    'การซื้อขายจริงเกิดได้เฉพาะ Intent ที่ผ่าน Rules/Research/Risk และโอ๊ดกดอนุมัติ',
   ].join('\n'));
 }
 
@@ -198,7 +282,6 @@ function requireAdmin(event) {
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: HEADERS, body: '' };
   await initializeBlobContext(event);
-
   const action = event.queryStringParameters?.action || '';
 
   if (action === 'setWebhook') {
@@ -219,7 +302,7 @@ exports.handler = async (event) => {
 
   if (action === 'test') {
     if (event.httpMethod !== 'POST' || !requireAdmin(event)) return response(401, { error: 'Unauthorized' });
-    const result = await tgSend('✅ Telegram Human Approval Bot เชื่อมต่อสำเร็จ');
+    const result = await tgSend('✅ Telegram Operator Bot เชื่อมต่อสำเร็จ');
     return response(result.ok ? 200 : 502, result);
   }
 
@@ -238,16 +321,28 @@ exports.handler = async (event) => {
   }
 
   if (update.callback_query) {
-    await handleApprovalCallback(update.callback_query, event);
-    return response(200, { ok: true });
+    if (await handleClassificationCallback(update.callback_query, event)) return response(200, { ok: true });
+    if (await handleApprovalCallback(update.callback_query, event)) return response(200, { ok: true });
+    await answerCallback(update.callback_query.id, 'คำสั่งไม่ถูกต้อง', true);
+    return response(400, { error: 'Unknown callback' });
   }
 
   if (update.message?.text) {
-    await handleCommand(update.message, event);
-    return response(200, { ok: true });
+    try {
+      await handleCommand(update.message, event);
+      return response(200, { ok: true });
+    } catch (error) {
+      await tgSend(`🔴 COMMAND ERROR\n${error.message}`);
+      return response(500, { error: error.message });
+    }
   }
 
   return response(200, { ok: true, ignored: true });
 };
 
-module.exports._test = { safeEqual, getHeader, isAuthorizedTelegramUpdate };
+module.exports._test = {
+  safeEqual,
+  getHeader,
+  isAuthorizedTelegramUpdate,
+  handleClassificationCallback,
+};

@@ -14,11 +14,8 @@ async function initializeBlobContext(event) {
   if (blobContextInitialized) return;
   const mod = await loadBlobsModule();
   if (typeof mod.connectLambda === 'function' && event) {
-    try {
-      mod.connectLambda(event);
-    } catch (error) {
-      console.warn('[intent-store] connectLambda skipped:', error.message);
-    }
+    try { mod.connectLambda(event); }
+    catch (error) { console.warn('[intent-store] connectLambda skipped:', error.message); }
   }
   blobContextInitialized = true;
 }
@@ -70,6 +67,27 @@ function calculateProposalQuantity({
   return qty;
 }
 
+function calculateBuyProposalQuantity({
+  cash,
+  price,
+  maxOrderValue = 3000,
+  cashReserve = 0,
+  boardLot = 100,
+}) {
+  const availableCash = Number(cash || 0);
+  const px = Number(price || 0);
+  const maxValue = Number(maxOrderValue || 0);
+  const reserve = Math.max(0, Number(cashReserve || 0));
+  const lot = Math.max(1, Math.floor(Number(boardLot || 100)));
+  const spendable = Math.max(0, availableCash - reserve);
+
+  if (![availableCash, px, maxValue].every(Number.isFinite)) return 0;
+  if (px <= 0 || maxValue <= 0 || spendable <= 0) return 0;
+
+  const budget = Math.min(spendable, maxValue);
+  return Math.floor((budget / px) / lot) * lot;
+}
+
 function intentIdFromKey(idempotencyKey) {
   if (!idempotencyKey) throw new Error('MISSING_IDEMPOTENCY_KEY');
   return crypto.createHash('sha256').update(String(idempotencyKey)).digest('hex').slice(0, 16);
@@ -83,15 +101,16 @@ function buildIntent(input, options = {}) {
   const side = normalizeSide(input.side);
   const quantity = Math.floor(Number(input.quantity || input.qty || 0));
   const proposedPrice = Number(input.proposedPrice || input.price || input.mkt || 0);
-  const portfolioQty = Math.floor(Number(input.portfolioQty || input.positionQty || 0));
+  const portfolioQty = Math.max(0, Math.floor(Number(input.portfolioQty || input.positionQty || 0)));
   const id = intentIdFromKey(input.idempotencyKey);
 
   if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('INVALID_QUANTITY');
   if (!Number.isFinite(proposedPrice) || proposedPrice <= 0) throw new Error('INVALID_PRICE');
-  if (!Number.isFinite(portfolioQty) || portfolioQty <= quantity) throw new Error('FULL_POSITION_EXIT_NOT_ALLOWED');
+  if (!Number.isFinite(portfolioQty) || portfolioQty < 0) throw new Error('INVALID_PORTFOLIO_QUANTITY');
+  if (side === 'SELL' && portfolioQty <= quantity) throw new Error('FULL_POSITION_EXIT_NOT_ALLOWED');
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
     idempotencyKey: String(input.idempotencyKey),
     status: 'PENDING_APPROVAL',
@@ -102,24 +121,19 @@ function buildIntent(input, options = {}) {
     estimatedValue: Number((quantity * proposedPrice).toFixed(2)),
     portfolioQty,
     portfolioBucket: input.portfolioBucket || 'REVIEW',
-    strategyVersion: input.strategyVersion || 'shadow-advisory-v1',
+    strategyVersion: input.strategyVersion || 'RULES_PROPOSAL_V1',
     runId: input.runId || null,
-    reasonCode: input.reasonCode || 'ADVISORY_SIGNAL',
+    reasonCode: input.reasonCode || 'RULES_SIGNAL',
     reason: String(input.reason || '').slice(0, 1000),
-    modelAuthority: 'ADVISORY_ONLY',
-    source: input.source || 'scheduled-shadow',
+    modelAuthority: input.modelAuthority || 'ADVISORY_ONLY',
+    decisionAuthority: input.decisionAuthority || 'DETERMINISTIC_RULES_PLUS_HUMAN_APPROVAL',
+    source: input.source || 'rules-proposal',
     createdAt,
     expiresAt,
     updatedAt: createdAt,
     approval: null,
     broker: null,
-    audit: [
-      {
-        at: createdAt,
-        event: 'INTENT_CREATED',
-        actor: 'system',
-      },
-    ],
+    audit: [{ at: createdAt, event: 'INTENT_CREATED', actor: 'system' }],
   };
 }
 
@@ -133,7 +147,6 @@ async function createIntent(input, options = {}) {
   const intent = buildIntent(input, options);
   const key = intentKey(intent.id);
   const store = await getIntentStore(options.event);
-
   try {
     await store.set(key, JSON.stringify(intent), {
       onlyIfNew: true,
@@ -207,7 +220,6 @@ async function transitionIntent(id, expectedStatuses, nextStatus, patch = {}, op
   } catch (error) {
     throw new Error(`INTENT_CONCURRENT_UPDATE:${error.message}`);
   }
-
   return next;
 }
 
@@ -216,14 +228,12 @@ async function listIntents(event, { status, limit = 200 } = {}) {
   const { blobs } = await store.list({ prefix: INTENT_PREFIX });
   const selected = blobs.slice(-Math.max(1, Math.min(1000, limit)));
   const rows = [];
-
   for (const blob of selected) {
     const item = await store.get(blob.key, { type: 'json', consistency: 'strong' });
     if (!item) continue;
     if (status && item.status !== status) continue;
     rows.push(item);
   }
-
   return rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
 }
 
@@ -232,7 +242,6 @@ async function getDailyExecutionStats(event, date = new Date()) {
   const intents = await listIntents(event, { limit: 1000 });
   const executedStatuses = new Set(['SUBMITTED', 'ACKNOWLEDGED', 'RECONCILE_PENDING', 'PARTIALLY_FILLED', 'FILLED']);
   const matched = intents.filter((intent) => String(intent.createdAt || '').startsWith(day) && executedStatuses.has(intent.status));
-
   return {
     date: day,
     count: matched.length,
@@ -248,6 +257,7 @@ function isExpired(intent, now = new Date()) {
 module.exports = {
   initializeBlobContext,
   calculateProposalQuantity,
+  calculateBuyProposalQuantity,
   buildIntent,
   createIntent,
   getIntent,

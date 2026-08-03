@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "sourceDate": "2025-04-30",
+  "sourceType": "USER_PROVIDED_HISTORICAL_GROUP_LIST",
+  "usage": "CLASSIFICATION_SUGGESTION_ONLY",
+  "disclaimer": "Historical categories and prices are not live instructions. Every symbol defaults to REVIEW until the operator approves a bucket.",
+  "suggestions": {
+    "CORE": [
+      "RATCH", "TPIPP", "PTTEP", "RJH", "GULF", "AIT", "ICN", "SIS", "PT", "SNC",
+      "ASEFA", "PM", "TVO", "WINNER", "LH", "LALIN", "ARROW", "ASK", "IFS", "TNITY",
+      "MFC", "KGI", "TCAP", "KKP", "TISCO", "DRT", "SCP", "PDG", "MBAX", "PTL",
+      "TKS", "SMPC", "TIPH", "MTI", "GC", "TMILL", "TACC", "TSC", "SAT", "MINT"
+    ],
+    "ACTIVE": [
+      "STGT", "IRPC", "SYNEX", "UOBKH", "IT", "TPP", "BIS", "CWT", "CAZ", "FVC",
+      "STP", "AJ", "AS", "TH", "JMT", "KUMWEL", "SAWAD", "CPANEL", "SFLEX", "NCAP",
+      "TEAMG", "PRI", "TMAN", "HTECH"
+    ]
+  }
+}

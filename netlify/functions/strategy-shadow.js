@@ -1,6 +1,7 @@
 const https = require('https');
-const { handler: invxHandler } = require('./invx');
-const { loadPortfolioPolicy, segmentPortfolio, summarizeAllocation } = require('../lib/portfolio-policy');
+const { fetchBrokerPortfolio } = require('../lib/broker-portfolio');
+const { loadEffectivePortfolioPolicy } = require('../lib/effective-portfolio-policy');
+const { segmentPortfolio, summarizeAllocation } = require('../lib/portfolio-policy');
 const { fetchDailyHistory, fetchSetTriSnapshot } = require('../lib/research-market-data');
 const { evaluateActiveStrategy, evaluateBenchmarkRegime } = require('../lib/deterministic-strategy');
 const { corporateActionGate } = require('../lib/corporate-action-gate');
@@ -54,24 +55,6 @@ function postTelegram(text) {
   });
 }
 
-async function fetchBrokerPortfolio(event) {
-  const response = await invxHandler({
-    httpMethod: 'GET',
-    headers: {},
-    queryStringParameters: { action: 'getData' },
-    body: '',
-    requestContext: event?.requestContext,
-  });
-  let payload = {};
-  try { payload = JSON.parse(response.body || '{}'); }
-  catch { throw new Error('BROKER_PORTFOLIO_INVALID_JSON'); }
-  if (response.statusCode !== 200) throw new Error(`BROKER_PORTFOLIO_HTTP_${response.statusCode}`);
-  return {
-    portfolio: Array.isArray(payload.portfolio) ? payload.portfolio : [],
-    cash: Number(payload.cash || 0),
-  };
-}
-
 function latestPrice(history) {
   const candle = history?.candles?.[history.candles.length - 1];
   return Number(candle?.adjustedClose || candle?.close || 0);
@@ -103,19 +86,18 @@ function buildReportSummary(report, gate) {
   return rows.join('\n');
 }
 
-exports.handler = async (event = {}) => {
-  const now = new Date();
+async function runStrategyShadow(event = {}, options = {}) {
+  const now = options.now || new Date();
   const researchWindow = isResearchWindow(now);
-  if (!researchWindow.allowed && process.env.ALLOW_MANUAL_RESEARCH_OUTSIDE_WINDOW !== 'true') {
-    return jsonResponse(200, {
-      ok: true,
+  if (!researchWindow.allowed && process.env.ALLOW_MANUAL_RESEARCH_OUTSIDE_WINDOW !== 'true' && !options.force) {
+    return {
       skipped: true,
       reason: researchWindow.reason,
       date: researchWindow.isoDate,
-    });
+    };
   }
 
-  const policy = loadPortfolioPolicy();
+  const { policy, source: policySource } = await loadEffectivePortfolioPolicy(event);
   const broker = await fetchBrokerPortfolio(event);
   const segmented = segmentPortfolio(broker.portfolio, policy);
   const allocation = summarizeAllocation(segmented, broker.cash, policy);
@@ -207,6 +189,7 @@ exports.handler = async (event = {}) => {
   const report = {
     marketOpenDay: true,
     policyVersion: policy.schemaVersion,
+    policySource,
     strategyVersion: savedState.strategyVersion,
     equity: savedState.equity,
     cash: savedState.cash,
@@ -240,13 +223,25 @@ exports.handler = async (event = {}) => {
     minimumEvents: policy.research.minimumDecisionEvents,
   });
 
-  await postTelegram(buildReportSummary(report, gate));
+  if (options.sendTelegram !== false) await postTelegram(buildReportSummary(report, gate));
 
-  return jsonResponse(200, {
-    ok: true,
+  return {
+    skipped: false,
     date: researchWindow.isoDate,
     report,
     gate,
     note: 'Rules-only shadow research; no live orders or order intents are created.',
-  });
+  };
+}
+
+exports.handler = async (event = {}) => {
+  try {
+    const result = await runStrategyShadow(event, { sendTelegram: true });
+    return jsonResponse(200, { ok: true, ...result });
+  } catch (error) {
+    await postTelegram(`🔴 RULES SHADOW ERROR\n${error.message}`);
+    return jsonResponse(500, { ok: false, error: error.message });
+  }
 };
+
+module.exports.runStrategyShadow = runStrategyShadow;
