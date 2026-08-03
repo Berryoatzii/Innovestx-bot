@@ -1,11 +1,11 @@
 {
   "name": "innovestx-bot",
-  "version": "8.2.0-human-approval",
+  "version": "8.3.0-strategy-research",
   "private": true,
-  "description": "InnovestX trading assistant with fail-closed human-approved order intents",
+  "description": "InnovestX investment research assistant with human approval, deterministic rules, and shadow validation",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:safety": "node --test tests/safety-lock.test.js tests/human-approval.test.js"
+    "test:safety": "node --test tests/safety-lock.test.js tests/human-approval.test.js tests/strategy-research.test.js"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.10"
