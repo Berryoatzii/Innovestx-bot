@@ -1,27 +1,10 @@
+const { openBlobStore } = require('./blob-runtime');
+
 const STORE_NAME = 'fundamental-snapshots-v1';
 const PREFIX = 'snapshot/';
-let blobsPromise = null;
-let connected = false;
 
-function loadBlobs() {
-  if (!blobsPromise) blobsPromise = import('@netlify/blobs');
-  return blobsPromise;
-}
-
-async function connect(event) {
-  if (connected) return;
-  const mod = await loadBlobs();
-  if (typeof mod.connectLambda === 'function' && event) {
-    try { mod.connectLambda(event); }
-    catch (error) { console.warn('[fundamental-store] connectLambda skipped:', error.message); }
-  }
-  connected = true;
-}
-
-async function getStore(event) {
-  await connect(event);
-  const { getStore } = await loadBlobs();
-  return getStore({ name: STORE_NAME, consistency: 'strong' });
+async function getStore(event, consistency = 'eventual') {
+  return openBlobStore(STORE_NAME, { event, consistency });
 }
 
 function normalizeSymbol(symbol) {
@@ -132,7 +115,7 @@ function snapshotFreshness(snapshot, policy, now = new Date()) {
 
 async function putSnapshot(input, event) {
   const snapshot = normalizeSnapshot(input);
-  const store = await getStore(event);
+  const store = await getStore(event, 'prefer-strong');
   await store.set(keyFor(snapshot.symbol), JSON.stringify(snapshot), {
     metadata: {
       symbol: snapshot.symbol,
@@ -146,7 +129,7 @@ async function putSnapshot(input, event) {
 
 async function getSnapshot(symbol, event) {
   const store = await getStore(event);
-  return store.get(keyFor(symbol), { type: 'json', consistency: 'strong' });
+  return store.get(keyFor(symbol), { type: 'json' });
 }
 
 async function listSnapshots(event) {
@@ -154,7 +137,7 @@ async function listSnapshots(event) {
   const { blobs } = await store.list({ prefix: PREFIX });
   const snapshots = [];
   for (const blob of blobs) {
-    const snapshot = await store.get(blob.key, { type: 'json', consistency: 'strong' });
+    const snapshot = await store.get(blob.key, { type: 'json' });
     if (snapshot) snapshots.push(snapshot);
   }
   return snapshots.sort((a, b) => a.symbol.localeCompare(b.symbol));
