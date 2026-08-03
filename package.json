@@ -1,11 +1,11 @@
 {
   "name": "innovestx-bot",
-  "version": "8.6.0-thai-menu",
+  "version": "8.7.0-easy-approval",
   "private": true,
-  "description": "InnovestX investment assistant with Thai Telegram menu, safe manual limit drafts, deterministic action plans, human approval and shadow validation",
+  "description": "InnovestX investment assistant with one-click Easy Approval, deterministic proposals, human confirmation and fail-closed live execution",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:safety": "node --test tests/safety-lock.test.js tests/human-approval.test.js tests/strategy-research.test.js tests/operator-ready.test.js tests/blob-runtime.test.js tests/deploy-probe.test.js tests/action-plan.test.js tests/thai-menu-manual-draft.test.js"
+    "test:safety": "node --test tests/safety-lock.test.js tests/human-approval.test.js tests/strategy-research.test.js tests/operator-ready.test.js tests/blob-runtime.test.js tests/deploy-probe.test.js tests/action-plan.test.js tests/thai-menu-manual-draft.test.js tests/easy-approval.test.js"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.10"
