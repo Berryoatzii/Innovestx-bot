@@ -1,28 +1,11 @@
+const { openBlobStore } = require('./blob-runtime');
+
 const STORE_NAME = 'strategy-shadow-v1';
 const STATE_KEY = 'state/portfolio.json';
 const REPORT_PREFIX = 'report/';
-let modulePromise = null;
-let connected = false;
 
-function loadBlobs() {
-  if (!modulePromise) modulePromise = import('@netlify/blobs');
-  return modulePromise;
-}
-
-async function connect(event) {
-  if (connected) return;
-  const mod = await loadBlobs();
-  if (typeof mod.connectLambda === 'function' && event) {
-    try { mod.connectLambda(event); }
-    catch (error) { console.warn('[shadow-store] connectLambda skipped:', error.message); }
-  }
-  connected = true;
-}
-
-async function getStore(event) {
-  await connect(event);
-  const { getStore: createStore } = await loadBlobs();
-  return createStore({ name: STORE_NAME, consistency: 'strong' });
+async function getStore(event, consistency = 'eventual') {
+  return openBlobStore(STORE_NAME, { event, consistency });
 }
 
 function defaultState(initialCapital = 100000) {
@@ -42,14 +25,14 @@ function defaultState(initialCapital = 100000) {
 }
 
 async function getShadowState(event, initialCapital = 100000) {
-  const store = await getStore(event);
-  const record = await store.getWithMetadata(STATE_KEY, { type: 'json', consistency: 'strong' });
+  const store = await getStore(event, 'prefer-strong');
+  const record = await store.getWithMetadata(STATE_KEY, { type: 'json' });
   if (!record) return { data: defaultState(initialCapital), etag: null, store };
   return { data: record.data, etag: record.etag || null, store };
 }
 
 async function saveShadowState(state, event, expectedEtag = null) {
-  const store = await getStore(event);
+  const store = await getStore(event, 'prefer-strong');
   const next = { ...state, updatedAt: new Date().toISOString() };
   const options = {
     metadata: { updatedAt: next.updatedAt, equity: next.equity, positions: Object.keys(next.positions || {}).length },
@@ -60,10 +43,8 @@ async function saveShadowState(state, event, expectedEtag = null) {
     await store.set(STATE_KEY, JSON.stringify(next), options);
   } catch (error) {
     if (!expectedEtag) {
-      const existing = await store.getWithMetadata(STATE_KEY, { type: 'json', consistency: 'strong' });
-      if (existing?.etag) {
-        throw new Error('SHADOW_STATE_ALREADY_INITIALIZED_RETRY');
-      }
+      const existing = await store.getWithMetadata(STATE_KEY, { type: 'json' });
+      if (existing?.etag) throw new Error('SHADOW_STATE_ALREADY_INITIALIZED_RETRY');
     }
     throw new Error(`SHADOW_STATE_CONFLICT:${error.message}`);
   }
@@ -76,7 +57,7 @@ function reportKey(date) {
 }
 
 async function saveDailyReport(date, report, event) {
-  const store = await getStore(event);
+  const store = await getStore(event, 'prefer-strong');
   const key = reportKey(date);
   const payload = {
     schemaVersion: 1,
@@ -95,7 +76,7 @@ async function saveDailyReport(date, report, event) {
     });
     return { report: payload, created: true };
   } catch (error) {
-    const existing = await store.get(key, { type: 'json', consistency: 'strong' });
+    const existing = await store.get(key, { type: 'json' });
     if (existing) return { report: existing, created: false };
     throw error;
   }
@@ -107,7 +88,7 @@ async function listDailyReports(event, limit = 400) {
   const selected = blobs.slice(-Math.max(1, Math.min(1000, limit)));
   const reports = [];
   for (const blob of selected) {
-    const report = await store.get(blob.key, { type: 'json', consistency: 'strong' });
+    const report = await store.get(blob.key, { type: 'json' });
     if (report) reports.push(report);
   }
   return reports.sort((a, b) => String(a.date).localeCompare(String(b.date)));
