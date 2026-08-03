@@ -3,6 +3,7 @@
 
 const crypto = require('crypto');
 const { handler: engineHandler } = require('../lib/invx-engine');
+const { getIntent } = require('../lib/order-intent-store');
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 const EXECUTE_CONFIRMATION = process.env.EXECUTE_CONFIRMATION || '';
@@ -43,9 +44,39 @@ function getHeader(headers, name) {
   return match ? match[1] : '';
 }
 
-function expectedIntentSignature(intentId) {
+function parseBody(event) {
+  if (!event.body) return {};
+  try { return JSON.parse(event.body); }
+  catch { return {}; }
+}
+
+function normalizeOrderBody(body = {}) {
+  const rawSide = String(body.side || '').toUpperCase();
+  const side = rawSide.startsWith('B') ? 'BUY' : rawSide.startsWith('S') ? 'SELL' : rawSide;
+  return {
+    symbol: String(body.ticker || body.symbol || '').toUpperCase().trim(),
+    side,
+    quantity: Math.floor(Number(body.quantity || body.qty || body.volume || 0)),
+    price: Number(body.price || 0),
+  };
+}
+
+function signaturePayload(intentId, orderBody = {}) {
+  const normalized = normalizeOrderBody(orderBody);
+  return [
+    String(intentId || '').toLowerCase(),
+    normalized.symbol,
+    normalized.side,
+    String(normalized.quantity),
+    Number(normalized.price || 0).toFixed(4),
+  ].join('|');
+}
+
+function expectedIntentSignature(intentId, orderBody = {}) {
   if (!ORDER_INTENT_GATE_SECRET) return '';
-  return crypto.createHmac('sha256', ORDER_INTENT_GATE_SECRET).update(String(intentId || '')).digest('hex');
+  return crypto.createHmac('sha256', ORDER_INTENT_GATE_SECRET)
+    .update(signaturePayload(intentId, orderBody))
+    .digest('hex');
 }
 
 function sanitizeEvent(event) {
@@ -54,10 +85,7 @@ function sanitizeEvent(event) {
     if (['api-key', 'api-secret'].includes(String(key).toLowerCase())) delete headers[key];
   }
 
-  let body = {};
-  if (event.body) {
-    try { body = JSON.parse(event.body); } catch { body = {}; }
-  }
+  const body = parseBody(event);
   delete body.api_key;
   delete body.api_secret;
   delete body.pin;
@@ -67,6 +95,33 @@ function sanitizeEvent(event) {
     headers,
     body: Object.keys(body).length ? JSON.stringify(body) : '',
   };
+}
+
+async function validateIntentBinding(event, intentId, suppliedSignature) {
+  const rawBody = parseBody(event);
+  const order = normalizeOrderBody(rawBody);
+  if (!order.symbol || !['BUY', 'SELL'].includes(order.side) || order.quantity <= 0 || order.price <= 0) {
+    throw new Error('INVALID_SIGNED_ORDER_BODY');
+  }
+
+  const expected = expectedIntentSignature(intentId, rawBody);
+  if (!safeEqual(suppliedSignature, expected)) throw new Error('INVALID_ORDER_INTENT_SIGNATURE');
+
+  const intent = await getIntent(intentId, event);
+  if (!intent) throw new Error('ORDER_INTENT_NOT_FOUND');
+  if (intent.status !== 'APPROVING') throw new Error(`ORDER_INTENT_NOT_APPROVING:${intent.status}`);
+  if (intent.portfolioBucket !== 'ACTIVE') throw new Error('ORDER_INTENT_BUCKET_NOT_ACTIVE');
+  if (intent.decisionAuthority !== 'DETERMINISTIC_RULES_PLUS_HUMAN_APPROVAL') {
+    throw new Error('ORDER_INTENT_AUTHORITY_INVALID');
+  }
+  if (intent.symbol !== order.symbol || intent.side !== order.side || Number(intent.quantity) !== order.quantity) {
+    throw new Error('ORDER_BODY_DOES_NOT_MATCH_INTENT');
+  }
+
+  const maxDriftPct = Number(process.env.MAX_PRICE_DRIFT_PCT || 0.02);
+  const driftPct = Math.abs(order.price - Number(intent.proposedPrice)) / Number(intent.proposedPrice);
+  if (!Number.isFinite(driftPct) || driftPct > maxDriftPct) throw new Error('SIGNED_ORDER_PRICE_DRIFT_EXCEEDED');
+  return { intent, order, driftPct };
 }
 
 exports.handler = async (event) => {
@@ -90,52 +145,38 @@ exports.handler = async (event) => {
         safeDefault: true,
       });
     }
-
     const suppliedAdmin = getHeader(event.headers, 'x-admin-token');
-    if (!safeEqual(suppliedAdmin, ADMIN_TOKEN)) {
-      return response(401, { error: 'Unauthorized' });
-    }
+    if (!safeEqual(suppliedAdmin, ADMIN_TOKEN)) return response(401, { error: 'Unauthorized' });
   }
 
   if (isOrder) {
     if (!LIVE_TRADING_ENABLED) {
-      return response(423, {
-        error: 'Live trading is locked',
-        required: 'LIVE_TRADING_ENABLED=true',
-      });
+      return response(423, { error: 'Live trading is locked', required: 'LIVE_TRADING_ENABLED=true' });
     }
-
     if (!EXECUTE_CONFIRMATION) {
-      return response(503, {
-        error: 'Live trading disabled: EXECUTE_CONFIRMATION is not configured',
-      });
+      return response(503, { error: 'Live trading disabled: EXECUTE_CONFIRMATION is not configured' });
     }
-
     const suppliedConfirmation = getHeader(event.headers, 'x-execute-confirmation');
     if (!safeEqual(suppliedConfirmation, EXECUTE_CONFIRMATION)) {
       return response(401, { error: 'Missing or invalid execute confirmation' });
     }
 
     if (HUMAN_APPROVAL_ONLY) {
-      if (!ORDER_INTENT_GATE_SECRET) {
-        return response(503, { error: 'Order intent gate is not configured' });
-      }
-
+      if (!ORDER_INTENT_GATE_SECRET) return response(503, { error: 'Order intent gate is not configured' });
       const intentId = getHeader(event.headers, 'x-order-intent-id');
       const suppliedSignature = getHeader(event.headers, 'x-order-intent-signature');
       if (!/^[a-f0-9]{16}$/i.test(String(intentId || ''))) {
         return response(401, { error: 'Missing or invalid order intent ID' });
       }
-
-      const expected = expectedIntentSignature(intentId);
-      if (!safeEqual(suppliedSignature, expected)) {
-        return response(401, { error: 'Missing or invalid order intent signature' });
+      try {
+        await validateIntentBinding(event, intentId, suppliedSignature);
+      } catch (error) {
+        return response(401, { error: error.message });
       }
     }
   }
 
   try {
-    // Credentials and PIN are server-owned only; never trust browser-supplied values.
     const result = await engineHandler(sanitizeEvent(event), {});
     return {
       ...result,
@@ -150,4 +191,10 @@ exports.handler = async (event) => {
   }
 };
 
-module.exports._test = { safeEqual, expectedIntentSignature, getHeader };
+module.exports._test = {
+  safeEqual,
+  expectedIntentSignature,
+  signaturePayload,
+  normalizeOrderBody,
+  getHeader,
+};
