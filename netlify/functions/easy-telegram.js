@@ -146,7 +146,13 @@ exports.handler = async (event = {}) => {
   const action = event.queryStringParameters?.action || '';
 
   if (action === 'health') {
-    return response(200, { ok: true, version: EASY_VERSION, mode: 'easy-approval' });
+    return response(200, {
+      ok: true,
+      version: EASY_VERSION,
+      mode: 'easy-approval',
+      blobInitialization: 'lazy',
+      liveTradingEnabled: process.env.LIVE_TRADING_ENABLED === 'true',
+    });
   }
 
   if (action === 'configure') {
