@@ -1,11 +1,11 @@
 {
   "name": "innovestx-bot",
-  "version": "8.3.0-strategy-research",
+  "version": "8.4.0-operator-ready",
   "private": true,
-  "description": "InnovestX investment research assistant with human approval, deterministic rules, and shadow validation",
+  "description": "InnovestX investment assistant with Telegram setup, evidence-gated rules proposals, human approval and shadow validation",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:safety": "node --test tests/safety-lock.test.js tests/human-approval.test.js tests/strategy-research.test.js"
+    "test:safety": "node --test tests/safety-lock.test.js tests/human-approval.test.js tests/strategy-research.test.js tests/operator-ready.test.js"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.10"
