@@ -1,30 +1,16 @@
 const seed = require('../../config/research-seed-coach-ou-2025.json');
+const { openBlobStore } = require('./blob-runtime');
 
 const STORE_NAME = 'portfolio-operator-v1';
 const PREFIX = 'classification/';
 const SNAPSHOT_KEY = 'snapshot/latest-portfolio.json';
-let modulePromise = null;
-let connected = false;
-
-function loadBlobs() {
-  if (!modulePromise) modulePromise = import('@netlify/blobs');
-  return modulePromise;
-}
 
 async function connect(event) {
-  if (connected) return;
-  const mod = await loadBlobs();
-  if (typeof mod.connectLambda === 'function' && event) {
-    try { mod.connectLambda(event); }
-    catch (error) { console.warn('[classification-store] connectLambda skipped:', error.message); }
-  }
-  connected = true;
+  return openBlobStore(STORE_NAME, { event, consistency: 'eventual' });
 }
 
-async function getStore(event) {
-  await connect(event);
-  const { getStore } = await loadBlobs();
-  return getStore({ name: STORE_NAME, consistency: 'strong' });
+async function getStore(event, consistency = 'eventual') {
+  return openBlobStore(STORE_NAME, { event, consistency });
 }
 
 function normalizeSymbol(symbol) {
@@ -56,15 +42,15 @@ function suggestBucket(symbol) {
 
 async function getClassification(symbol, event) {
   const store = await getStore(event);
-  return store.get(keyFor(symbol), { type: 'json', consistency: 'strong' });
+  return store.get(keyFor(symbol), { type: 'json' });
 }
 
 async function setClassification(symbol, bucket, options = {}) {
   const normalizedSymbol = normalizeSymbol(symbol);
   const normalizedBucket = normalizeBucket(bucket);
-  const store = await getStore(options.event);
+  const store = await getStore(options.event, 'prefer-strong');
   const key = keyFor(normalizedSymbol);
-  const current = await store.getWithMetadata(key, { type: 'json', consistency: 'strong' });
+  const current = await store.getWithMetadata(key, { type: 'json' });
   const now = options.at || new Date().toISOString();
   const suggestion = suggestBucket(normalizedSymbol);
   const next = {
@@ -110,7 +96,7 @@ async function listClassifications(event) {
   const { blobs } = await store.list({ prefix: PREFIX });
   const rows = [];
   for (const blob of blobs) {
-    const item = await store.get(blob.key, { type: 'json', consistency: 'strong' });
+    const item = await store.get(blob.key, { type: 'json' });
     if (item) rows.push(item);
   }
   return rows.sort((a, b) => a.symbol.localeCompare(b.symbol));
@@ -122,7 +108,7 @@ async function classificationMap(event) {
 }
 
 async function savePortfolioSnapshot(portfolio, cash, event) {
-  const store = await getStore(event);
+  const store = await getStore(event, 'prefer-strong');
   const payload = {
     schemaVersion: 1,
     recordedAt: new Date().toISOString(),
@@ -142,7 +128,7 @@ async function savePortfolioSnapshot(portfolio, cash, event) {
 
 async function getPortfolioSnapshot(event) {
   const store = await getStore(event);
-  return store.get(SNAPSHOT_KEY, { type: 'json', consistency: 'strong' });
+  return store.get(SNAPSHOT_KEY, { type: 'json' });
 }
 
 function summarizeClassifications(portfolio, map) {

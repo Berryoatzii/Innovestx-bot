@@ -1,27 +1,10 @@
+const { openBlobStore } = require('./blob-runtime');
+
 const STORE_NAME = 'core-thesis-v1';
 const PREFIX = 'thesis/';
-let blobsPromise = null;
-let connected = false;
 
-function loadBlobs() {
-  if (!blobsPromise) blobsPromise = import('@netlify/blobs');
-  return blobsPromise;
-}
-
-async function connect(event) {
-  if (connected) return;
-  const mod = await loadBlobs();
-  if (typeof mod.connectLambda === 'function' && event) {
-    try { mod.connectLambda(event); }
-    catch (error) { console.warn('[core-thesis] connectLambda skipped:', error.message); }
-  }
-  connected = true;
-}
-
-async function getStore(event) {
-  await connect(event);
-  const { getStore } = await loadBlobs();
-  return getStore({ name: STORE_NAME, consistency: 'strong' });
+async function getStore(event, consistency = 'eventual') {
+  return openBlobStore(STORE_NAME, { event, consistency });
 }
 
 function normalizeSymbol(symbol) {
@@ -103,7 +86,7 @@ function isThesisApproved(card, now = new Date()) {
 
 async function putThesisCard(input, event) {
   const card = buildThesisCard(input);
-  const store = await getStore(event);
+  const store = await getStore(event, 'prefer-strong');
   await store.set(keyFor(card.symbol), JSON.stringify(card), {
     metadata: { symbol: card.symbol, status: card.status, updatedAt: card.updatedAt },
   });
@@ -112,7 +95,7 @@ async function putThesisCard(input, event) {
 
 async function getThesisCard(symbol, event) {
   const store = await getStore(event);
-  return store.get(keyFor(symbol), { type: 'json', consistency: 'strong' });
+  return store.get(keyFor(symbol), { type: 'json' });
 }
 
 async function listThesisCards(event) {
@@ -120,7 +103,7 @@ async function listThesisCards(event) {
   const { blobs } = await store.list({ prefix: PREFIX });
   const cards = [];
   for (const blob of blobs) {
-    const card = await store.get(blob.key, { type: 'json', consistency: 'strong' });
+    const card = await store.get(blob.key, { type: 'json' });
     if (card) cards.push(card);
   }
   return cards.sort((a, b) => a.symbol.localeCompare(b.symbol));
