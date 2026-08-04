@@ -14,6 +14,7 @@ test('Telegram health probe responds without Blobs or broker access', async () =
 
   clear('../netlify/functions/telegram');
   clear('../netlify/functions/easy-telegram');
+  clear('../netlify/functions/easy-advisor');
   const { handler, _test } = require('../netlify/functions/telegram');
 
   const result = await handler({
@@ -26,9 +27,9 @@ test('Telegram health probe responds without Blobs or broker access', async () =
   assert.equal(result.statusCode, 200);
   const payload = JSON.parse(result.body);
   assert.equal(payload.ok, true);
-  assert.equal(payload.version, 'EASY_APPROVAL_V1.1.0');
+  assert.equal(payload.version, 'EASY_APPROVAL_V1.2.0');
   assert.equal(payload.mode, 'easy-approval');
   assert.equal(payload.blobInitialization, 'lazy');
   assert.equal(payload.liveTradingEnabled, false);
-  assert.equal(_test.EASY_VERSION, 'EASY_APPROVAL_V1.1.0');
+  assert.equal(_test.EASY_VERSION, 'EASY_APPROVAL_V1.2.0');
 });

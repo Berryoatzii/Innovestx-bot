@@ -1,4 +1,3 @@
-const https = require('https');
 const { fetchBrokerPortfolio } = require('../lib/broker-portfolio');
 const {
   classificationMap,
@@ -7,11 +6,15 @@ const {
   setClassification,
   savePortfolioSnapshot,
 } = require('../lib/portfolio-classification-store');
+const {
+  easyCommands,
+  configurePrimaryWebhook,
+  diagnoseAndRepair,
+  tgPost,
+} = require('../lib/telegram-control');
 
-const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '');
-const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
-const EASY_VERSION = 'EASY_APPROVAL_V1.1.0';
+const EASY_VERSION = 'EASY_APPROVAL_V1.2.0';
 
 function jsonResponse(statusCode, data) {
   return {
@@ -19,33 +22,6 @@ function jsonResponse(statusCode, data) {
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     body: JSON.stringify(data),
   };
-}
-
-function tgPost(method, data) {
-  if (!TG_TOKEN) return Promise.resolve({ ok: false, description: 'TELEGRAM_TOKEN missing' });
-  const body = JSON.stringify(data);
-  return new Promise((resolve) => {
-    const req = https.request({
-      hostname: 'api.telegram.org',
-      path: `/bot${TG_TOKEN}/${method}`,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    }, (res) => {
-      let payload = '';
-      res.on('data', (chunk) => { payload += chunk; });
-      res.on('end', () => {
-        try { resolve(JSON.parse(payload)); }
-        catch { resolve({ ok: false, description: `HTTP ${res.statusCode}` }); }
-      });
-    });
-    req.on('error', (error) => resolve({ ok: false, description: error.message }));
-    req.setTimeout(8000, () => { req.destroy(); resolve({ ok: false, description: 'timeout' }); });
-    req.write(body);
-    req.end();
-  });
 }
 
 async function tgSend(text, keyboard = null) {
@@ -59,40 +35,8 @@ async function tgSend(text, keyboard = null) {
   return tgPost('sendMessage', payload);
 }
 
-function baseUrl() {
-  const value = process.env.URL || process.env.DEPLOY_PRIME_URL || '';
-  return String(value).replace(/\/$/, '');
-}
-
-function easyCommands() {
-  return [
-    { command: 'easy', description: 'โหมดง่าย ให้บอทแนะนำแล้วกดยืนยัน' },
-    { command: 'rotation', description: 'ดู Sector Rotation สหรัฐฯ เทียบ SPY' },
-    { command: 'portfolio', description: 'ดูพอร์ตและเงินสดล่าสุด' },
-    { command: 'pending', description: 'ดูคำแนะนำที่รอยืนยัน' },
-    { command: 'readiness', description: 'ดูความพร้อมของระบบ' },
-    { command: 'advanced', description: 'เปิดเมนูขั้นสูง' },
-  ];
-}
-
 async function configureEasyTelegram() {
-  const url = baseUrl();
-  if (!url || !WEBHOOK_SECRET) {
-    return { ok: false, description: 'URL or TELEGRAM_WEBHOOK_SECRET missing' };
-  }
-  const webhook = await tgPost('setWebhook', {
-    url: `${url}/.netlify/functions/telegram`,
-    secret_token: WEBHOOK_SECRET,
-    allowed_updates: ['message', 'callback_query'],
-    drop_pending_updates: false,
-    max_connections: 5,
-  });
-  const menu = await tgPost('setMyCommands', {
-    commands: easyCommands(),
-    scope: { type: 'chat', chat_id: Number(TG_CHAT_ID) },
-    language_code: 'th',
-  });
-  return { ok: Boolean(webhook.ok && menu.ok), webhook, menu };
+  return configurePrimaryWebhook();
 }
 
 function buildRecommendations(portfolio, map) {
@@ -127,7 +71,7 @@ function recommendationText(recommendation) {
     examples ? `ตัวอย่าง: ${examples}` : '',
     '',
     'การยืนยันนี้เป็นเพียงการจัดหมวดการทำงาน ไม่ใช่คำสั่งซื้อขาย',
-    'หลังยืนยัน บอทจะวิเคราะห์เองและส่งเฉพาะรายการที่ผ่านกฎมาให้กด “ยืนยัน” หรือ “ไม่ทำ”',
+    'หลังยืนยัน บอทจะส่งเฉพาะรายการที่ผ่านกฎมาให้กด “ยืนยัน” หรือ “ไม่ทำ”',
   ].filter(Boolean).join('\n');
 }
 
@@ -187,7 +131,7 @@ async function runEasyAdvisor(event = {}, options = {}) {
       '',
       'รอบ Sector Rotation: 08:35 น.',
       'รอบคำแนะนำซื้อขาย: 10:15 และ 14:15 น.',
-      'Sector Rotation เป็นเพียงบริบทตลาด ไม่ได้สร้างออเดอร์เอง',
+      'ถ้าไม่มีรายการผ่านกฎ บอทจะไม่ฝืนสร้างออเดอร์',
     ].join('\n'));
   }
   return {
@@ -198,9 +142,14 @@ async function runEasyAdvisor(event = {}, options = {}) {
 
 exports.handler = async (event = {}) => {
   try {
-    const configuration = await configureEasyTelegram();
+    const configuration = await diagnoseAndRepair({ force: true });
     const result = await runEasyAdvisor(event, { sendMessages: true });
-    return jsonResponse(200, { ok: true, version: EASY_VERSION, configuration, ...result });
+    return jsonResponse(200, {
+      ok: true,
+      version: EASY_VERSION,
+      configuration,
+      ...result,
+    });
   } catch (error) {
     await tgSend(`🔴 EASY MODE ERROR\n${error.message}`);
     return jsonResponse(500, { ok: false, version: EASY_VERSION, error: error.message });
