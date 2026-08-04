@@ -21,12 +21,13 @@ test('Easy Mode recommends only unclassified positions and preserves explicit ch
   assert.equal(result.summary.rows.find((item) => item.symbol === 'ICN').bucket, 'ACTIVE');
 });
 
-test('Easy command menu hides manual buy and sell from the primary workflow', () => {
+test('Easy command menu hides manual buy and sell and exposes rotation context', () => {
   const { easyCommands } = require('../netlify/functions/easy-advisor');
   const commands = easyCommands().map((item) => item.command);
-  assert.deepEqual(commands, ['easy', 'portfolio', 'pending', 'readiness', 'advanced']);
+  assert.deepEqual(commands, ['easy', 'rotation', 'portfolio', 'pending', 'readiness', 'advanced']);
   assert.equal(commands.includes('buy'), false);
   assert.equal(commands.includes('sell'), false);
+  assert.equal(commands.includes('rotation'), true);
 });
 
 test('Easy recommendation explains one-click confirmation and no direct execution', () => {
@@ -54,8 +55,8 @@ test('Primary Telegram webhook health reports Easy Approval mode', async () => {
   assert.equal(result.statusCode, 200);
   const payload = JSON.parse(result.body);
   assert.equal(payload.mode, 'easy-approval');
-  assert.equal(payload.version, 'EASY_APPROVAL_V1.0.0');
-  assert.equal(_test.EASY_VERSION, 'EASY_APPROVAL_V1.0.0');
+  assert.equal(payload.version, 'EASY_APPROVAL_V1.1.0');
+  assert.equal(_test.EASY_VERSION, 'EASY_APPROVAL_V1.1.0');
 });
 
 test('Easy router delegates non-easy commands and recognizes bot suffixes', () => {
@@ -64,4 +65,5 @@ test('Easy router delegates non-easy commands and recognizes bot suffixes', () =
   assert.equal(_test.normalizeCommand('/easy@BerryTradingBot'), '/easy');
   assert.match(_test.easyMenuText(), /ยืนยัน/);
   assert.match(_test.easyMenuText(), /ไม่มีสิทธิ์ส่งออเดอร์/);
+  assert.match(_test.easyMenuText(), /Sector Rotation/);
 });
