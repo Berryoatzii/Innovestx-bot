@@ -3,6 +3,7 @@ const advancedTelegram = require('./telegram-advanced');
 const { handler: advancedTelegramHandler } = advancedTelegram;
 const { runOnboarding } = require('./portfolio-onboarding');
 const { runSectorRotation } = require('./sector-rotation');
+const { diagnoseAndRepair } = require('../lib/telegram-control');
 const {
   EASY_VERSION,
   applyRecommendations,
@@ -124,9 +125,9 @@ async function handleEasyCallback(update, event) {
       `ยืนยันหมวดแล้ว: ${result.applied.length} ตัว`,
       `ไม่สำเร็จ: ${result.failed.length} ตัว`,
       '',
-      'จากนี้ไม่ต้องพิมพ์คำสั่งซื้อขายเอง',
-      'บอทจะวิเคราะห์ตามรอบตลาด และส่งเฉพาะรายการพร้อมปุ่มยืนยันมาให้ค่ะ',
-      'การจัดหมวดอาจใช้เวลาซิงก์ไม่เกินประมาณ 1 นาที',
+      result.complete
+        ? 'จากนี้บอทจะส่งเฉพาะรายการที่ผ่านกฎมาให้กดยืนยันค่ะ'
+        : 'ระบบยังไม่สร้างออเดอร์จนกว่ารายการที่ไม่สำเร็จจะถูกแก้',
     ].join('\n'));
     return true;
   }
@@ -154,6 +155,17 @@ exports.handler = async (event = {}) => {
       version: EASY_VERSION,
       mode: 'easy-approval',
       blobInitialization: 'lazy',
+      liveTradingEnabled: process.env.LIVE_TRADING_ENABLED === 'true',
+    });
+  }
+
+  if (action === 'diagnostics') {
+    const diagnostics = await diagnoseAndRepair({ force: false });
+    return response(diagnostics.ok ? 200 : 503, {
+      ok: diagnostics.ok,
+      version: EASY_VERSION,
+      mode: 'easy-approval',
+      telegram: diagnostics,
       liveTradingEnabled: process.env.LIVE_TRADING_ENABLED === 'true',
     });
   }
