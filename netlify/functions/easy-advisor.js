@@ -11,7 +11,7 @@ const {
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '');
 const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
-const EASY_VERSION = 'EASY_APPROVAL_V1.0.0';
+const EASY_VERSION = 'EASY_APPROVAL_V1.1.0';
 
 function jsonResponse(statusCode, data) {
   return {
@@ -67,6 +67,7 @@ function baseUrl() {
 function easyCommands() {
   return [
     { command: 'easy', description: 'โหมดง่าย ให้บอทแนะนำแล้วกดยืนยัน' },
+    { command: 'rotation', description: 'ดู Sector Rotation สหรัฐฯ เทียบ SPY' },
     { command: 'portfolio', description: 'ดูพอร์ตและเงินสดล่าสุด' },
     { command: 'pending', description: 'ดูคำแนะนำที่รอยืนยัน' },
     { command: 'readiness', description: 'ดูความพร้อมของระบบ' },
@@ -184,8 +185,9 @@ async function runEasyAdvisor(event = {}, options = {}) {
       '✅ EASY MODE กำลังทำงาน',
       'พอร์ตจัดหมวดครบแล้ว และบอทเฝ้าตลาดให้อัตโนมัติ',
       '',
+      'รอบ Sector Rotation: 08:35 น.',
       'รอบคำแนะนำซื้อขาย: 10:15 และ 14:15 น.',
-      'บอทจะส่งเฉพาะรายการที่ผ่าน Backtest, Shadow, Risk และราคาตลาด พร้อมปุ่มยืนยัน/ไม่ทำ',
+      'Sector Rotation เป็นเพียงบริบทตลาด ไม่ได้สร้างออเดอร์เอง',
     ].join('\n'));
   }
   return {

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const advancedTelegram = require('./telegram-advanced');
 const { handler: advancedTelegramHandler } = advancedTelegram;
 const { runOnboarding } = require('./portfolio-onboarding');
+const { runSectorRotation } = require('./sector-rotation');
 const {
   EASY_VERSION,
   applyRecommendations,
@@ -94,17 +95,19 @@ function easyMenuText() {
     '',
     'บอทจะทำงานแบบนี้:',
     '1. วิเคราะห์พอร์ต ราคา กราฟ และข้อมูลที่ตรวจยืนยันได้',
-    '2. คัดเฉพาะรายการที่ผ่านกฎและวงเงินความเสี่ยง',
-    '3. ส่งคำแนะนำพร้อมหุ้น จำนวน ราคา และเหตุผล',
+    '2. ตรวจ Sector Rotation เพื่อดูว่ากลุ่มไหนกำลังนำ/อ่อนแรง',
+    '3. คัดเฉพาะรายการที่ผ่านกฎและวงเงินความเสี่ยง',
     '4. โอ๊ดกดเพียง “ยืนยัน” หรือ “ไม่ทำ”',
     '',
     'คำสั่งหลัก:',
     '/easy — เริ่มหรือดูสถานะโหมดง่าย',
+    '/rotation — ดู Sector Rotation สหรัฐฯ เทียบ SPY',
     '/portfolio — ดูพอร์ตล่าสุด',
     '/pending — ดูคำแนะนำที่รอยืนยัน',
     '/readiness — ดูจุดที่ระบบยังติด',
     '/advanced — เปิดเมนูคำสั่งแบบละเอียด',
     '',
+    '⚠️ Sector Rotation เป็น Relative Strength/Momentum ไม่ใช่ Fund Flow หรือ Fair Value',
     '🔒 บอทไม่มีสิทธิ์ส่งออเดอร์โดยไม่มีการกดยืนยัน',
   ].join('\n');
 }
@@ -186,6 +189,11 @@ exports.handler = async (event = {}) => {
       await tgSend(easyMenuText());
       const result = await runEasyAdvisor(event, { sendMessages: true });
       return response(200, { ok: true, version: EASY_VERSION, stage: result.stage });
+    }
+    if (command === '/rotation') {
+      await tgSend('⏳ กำลังคำนวณ Sector Rotation ของ 11 Sector ETFs เทียบ SPY...');
+      const snapshot = await runSectorRotation(event, { sendTelegram: true, forceRefresh: true });
+      return response(200, { ok: true, version: EASY_VERSION, rotationAsOf: snapshot.asOf });
     }
     if (command === '/advanced') {
       const delegated = {
