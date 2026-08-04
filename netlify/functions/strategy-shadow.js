@@ -62,7 +62,7 @@ function latestPrice(history) {
 
 function buildReportSummary(report, gate) {
   const rows = [
-    `📘 RULES SHADOW — ${report.date}`,
+    `📘 RULES SHADOW — ${report.date || 'ไม่ทราบวันที่'}`,
     `พอร์ตเงา: ${Number(report.equity || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`,
     `เงินสดเงา: ${Number(report.cash || 0).toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`,
     `สถานะ ACTIVE: ${report.shadowPositions} ตัว`,
@@ -187,6 +187,7 @@ async function runStrategyShadow(event = {}, options = {}) {
   catch (error) { setTriError = error.message; }
 
   const report = {
+    date: researchWindow.isoDate,
     marketOpenDay: true,
     policyVersion: policy.schemaVersion,
     policySource,
@@ -245,3 +246,4 @@ exports.handler = async (event = {}) => {
 };
 
 module.exports.runStrategyShadow = runStrategyShadow;
+module.exports._test = { buildReportSummary };
