@@ -1,11 +1,11 @@
 {
   "name": "innovestx-bot",
-  "version": "8.8.0-sector-rotation",
+  "version": "8.9.0-production-recovery",
   "private": true,
-  "description": "InnovestX investment assistant with transparent US sector rotation context, one-click approval, deterministic proposals and fail-closed live execution",
+  "description": "InnovestX investment assistant with primary-site Telegram recovery, one-click approval, sector context and fail-closed live execution",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:safety": "node --test tests/safety-lock.test.js tests/human-approval.test.js tests/strategy-research.test.js tests/operator-ready.test.js tests/blob-runtime.test.js tests/deploy-probe.test.js tests/action-plan.test.js tests/thai-menu-manual-draft.test.js tests/easy-approval.test.js tests/sector-rotation.test.js"
+    "test:safety": "node --test tests/safety-lock.test.js tests/human-approval.test.js tests/strategy-research.test.js tests/operator-ready.test.js tests/blob-runtime.test.js tests/deploy-probe.test.js tests/action-plan.test.js tests/thai-menu-manual-draft.test.js tests/easy-approval.test.js tests/sector-rotation.test.js tests/production-recovery.test.js"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.10"
