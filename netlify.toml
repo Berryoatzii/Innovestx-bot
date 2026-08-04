@@ -33,12 +33,14 @@
 [functions."portfolio-onboarding"]
   node_bundler = "esbuild"
 
-# AI advisory cycle — every hour from 09:00 to 16:00 BKK on weekdays.
+# Quiet AI research cycles — 10:00 and 14:00 BKK on weekdays.
+# Telegram debug is opt-in via AI_ADVISORY_VERBOSE=true.
 [functions."autotrade"]
-  schedule = "0 2-9 * * 1-5"
+  schedule = "0 3,7 * * 1-5"
   node_bundler = "esbuild"
 
 # Evidence-gated deterministic proposals — 10:15 and 14:15 BKK on weekdays.
+# Telegram receives Confirm / Reject only when all proposal gates pass.
 [functions."rules-proposals"]
   schedule = "15 3,7 * * 1-5"
   node_bundler = "esbuild"
