@@ -23,6 +23,12 @@
   schedule = "20 1 * * 1-5"
   node_bundler = "esbuild"
 
+# Self-healing Telegram webhook check every 15 minutes from 07:00–18:45 BKK.
+# It can only bind to PRIMARY_SITE_URL and cannot accept a caller-supplied URL.
+[functions."telegram-keeper"]
+  schedule = "*/15 0-11 * * 1-5"
+  node_bundler = "esbuild"
+
 # US sector rotation context — 08:35 BKK on weekdays after the US market close.
 # Advisory only: relative strength/momentum, never creates an order.
 [functions."sector-rotation"]
