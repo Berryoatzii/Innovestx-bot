@@ -42,9 +42,10 @@ test('Easy recommendation explains one-click confirmation and no direct executio
   assert.match(text, /ยืนยัน/);
 });
 
-test('Primary Telegram webhook health reports Easy Approval mode', async () => {
+test('Primary Telegram webhook health reports Easy Approval recovery mode', async () => {
   clear('../netlify/functions/telegram');
   clear('../netlify/functions/easy-telegram');
+  clear('../netlify/functions/easy-advisor');
   const { handler, _test } = require('../netlify/functions/telegram');
   const result = await handler({
     httpMethod: 'GET',
@@ -55,12 +56,13 @@ test('Primary Telegram webhook health reports Easy Approval mode', async () => {
   assert.equal(result.statusCode, 200);
   const payload = JSON.parse(result.body);
   assert.equal(payload.mode, 'easy-approval');
-  assert.equal(payload.version, 'EASY_APPROVAL_V1.1.0');
-  assert.equal(_test.EASY_VERSION, 'EASY_APPROVAL_V1.1.0');
+  assert.equal(payload.version, 'EASY_APPROVAL_V1.2.0');
+  assert.equal(_test.EASY_VERSION, 'EASY_APPROVAL_V1.2.0');
 });
 
 test('Easy router delegates non-easy commands and recognizes bot suffixes', () => {
   clear('../netlify/functions/easy-telegram');
+  clear('../netlify/functions/easy-advisor');
   const { _test } = require('../netlify/functions/easy-telegram');
   assert.equal(_test.normalizeCommand('/easy@BerryTradingBot'), '/easy');
   assert.match(_test.easyMenuText(), /ยืนยัน/);
