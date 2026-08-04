@@ -1,14 +1,15 @@
 // Scheduled AI advisory only.
 // AI may surface observations, but deterministic data/risk logic builds the action plan.
 // This function creates zero order intents and can never reach the live-order path.
+// Telegram debug output is opt-in; important errors remain visible.
 
 const https = require('https');
 const crypto = require('crypto');
 const { runAutoTrader: runEngine } = require('../lib/autotrade-engine');
-const { buildActionPlan, formatActionPlan } = require('../lib/portfolio-action-plan');
+const { buildActionPlan } = require('../lib/portfolio-action-plan');
 
 const VALID_MODES = new Set(['analyze', 'dry_run']);
-const TELEGRAM_PROGRESS_ENABLED = process.env.TELEGRAM_PROGRESS_ENABLED !== 'false';
+const TELEGRAM_VERBOSE = process.env.AI_ADVISORY_VERBOSE === 'true';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 
@@ -24,9 +25,9 @@ function bkkTimestamp() {
   });
 }
 
-function postTelegram(text) {
-  if (!TELEGRAM_PROGRESS_ENABLED || !TG_TOKEN || !TG_CHAT_ID) {
-    return Promise.resolve({ sent: false, reason: 'telegram_not_configured' });
+function postTelegram(text, options = {}) {
+  if ((!TELEGRAM_VERBOSE && !options.force) || !TG_TOKEN || !TG_CHAT_ID) {
+    return Promise.resolve({ sent: false, reason: 'telegram_debug_disabled' });
   }
   const payload = {
     chat_id: TG_CHAT_ID,
@@ -120,12 +121,11 @@ exports.handler = async (event = {}) => {
   const requested = process.env.SCHEDULED_TRADE_MODE || 'dry_run';
   const mode = normalizeMode(requested);
 
-  console.log(`[AI Advisory] run=${runId} mode=${mode}`);
+  console.log(`[AI Advisory] run=${runId} mode=${mode} telegramVerbose=${TELEGRAM_VERBOSE}`);
   await postTelegram([
     `🟡 AI ADVISORY START [${runId}]`,
     `เวลา: ${bkkTimestamp()}`,
-    'สถานะ: กำลังอ่านพอร์ต ราคา กราฟ และข้อมูลมูลค่าที่ตรวจยืนยันได้',
-    '🔒 AI ไม่มีสิทธิ์สร้าง Order Intent หรือส่งคำสั่งซื้อขาย',
+    'กำลังอ่านพอร์ตแบบ Advisory เท่านั้น',
   ].join('\n'));
 
   try {
@@ -133,29 +133,13 @@ exports.handler = async (event = {}) => {
     const advisory = summarizeAdvisory(result);
     const plans = await buildPlans(advisory.observations, event);
 
-    const lines = [
+    await postTelegram([
       `🟢 AI ADVISORY DONE [${runId}]`,
-      `เวลา: ${bkkTimestamp()}`,
       `ตรวจแล้ว: ${(result.analyzed || []).length} หุ้น`,
-      `ข้อสังเกตจาก AI: ${advisory.observations.length} รายการ`,
-      `Decision plans: ${plans.filter((item) => !item.error).length} รายการ`,
-      `Engine errors: ${advisory.failedCount}`,
-      '',
-      '⚠️ AI เป็นเพียงตัวคัดสัญญาณ จำนวนและราคาใช้กฎตลาด/กราฟ/มูลค่า และยังไม่ใช่ออเดอร์',
-    ];
-    await postTelegram(lines.join('\n'));
-
-    if (plans.length === 0) {
-      await postTelegram('✅ รอบนี้ไม่มีหุ้นที่ต้องจัดทำแผนขาย');
-    } else {
-      for (const plan of plans) {
-        if (plan.error) {
-          await postTelegram(`🔴 PLAN ERROR — ${plan.symbol}\n${plan.error}\nไม่มีออเดอร์ถูกสร้าง`);
-        } else {
-          await postTelegram(formatActionPlan(plan));
-        }
-      }
-    }
+      `ข้อสังเกต: ${advisory.observations.length}`,
+      `Decision plans: ${plans.filter((item) => !item.error).length}`,
+      'รายงานนี้ไม่ใช่ออเดอร์',
+    ].join('\n'));
 
     return {
       statusCode: 200,
@@ -164,6 +148,7 @@ exports.handler = async (event = {}) => {
         ok: true,
         runId,
         mode: result.mode,
+        telegramVerbose: TELEGRAM_VERBOSE,
         analyzed: (result.analyzed || []).length,
         advisory,
         plans,
@@ -176,8 +161,8 @@ exports.handler = async (event = {}) => {
       `🔴 AI ADVISORY ERROR [${runId}]`,
       `เวลา: ${bkkTimestamp()}`,
       `สาเหตุ: ${error.message}`,
-      'ไม่มี Order Intent และไม่มีคำสั่งจริงจากรอบนี้',
-    ].join('\n'));
+      'ไม่มีคำสั่งซื้อขายจริงจากรอบนี้',
+    ].join('\n'), { force: true });
     return {
       statusCode: 500,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
