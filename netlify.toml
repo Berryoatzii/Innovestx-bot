@@ -19,9 +19,14 @@
   node_bundler = "esbuild"
 
 # Easy Mode setup and Telegram configuration — 08:20 BKK on weekdays.
-# Sends one bulk recommendation button instead of one message per stock.
 [functions."easy-advisor"]
   schedule = "20 1 * * 1-5"
+  node_bundler = "esbuild"
+
+# US sector rotation context — 08:35 BKK on weekdays after the US market close.
+# Advisory only: relative strength/momentum, never creates an order.
+[functions."sector-rotation"]
+  schedule = "35 1 * * 1-5"
   node_bundler = "esbuild"
 
 # Advanced per-symbol onboarding remains callable manually but is no longer scheduled.
@@ -29,13 +34,11 @@
   node_bundler = "esbuild"
 
 # AI advisory cycle — every hour from 09:00 to 16:00 BKK on weekdays.
-# It can only explain observations. It creates zero order intents and places zero orders.
 [functions."autotrade"]
   schedule = "0 2-9 * * 1-5"
   node_bundler = "esbuild"
 
 # Evidence-gated deterministic proposals — 10:15 and 14:15 BKK on weekdays.
-# When ready, the user receives only Confirm / Reject buttons.
 [functions."rules-proposals"]
   schedule = "15 3,7 * * 1-5"
   node_bundler = "esbuild"
@@ -60,7 +63,7 @@
   schedule = "*/10 3-9 * * 1-5"
   node_bundler = "esbuild"
 
-# Easy Telegram webhook router. Delegates advanced commands and live approvals to telegram.js.
+# Easy Telegram webhook router.
 [functions."easy-telegram"]
   node_bundler = "esbuild"
 
