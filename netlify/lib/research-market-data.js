@@ -7,9 +7,11 @@ function normalizeSymbol(symbol) {
   return value;
 }
 
-function yahooSymbol(symbol) {
+function yahooSymbol(symbol, market = 'TH') {
   const value = normalizeSymbol(symbol);
+  const normalizedMarket = String(market || 'TH').toUpperCase();
   if (value.startsWith('^') || value.includes('.')) return value;
+  if (normalizedMarket === 'US' || normalizedMarket === 'GLOBAL') return value;
   return `${value}.BK`;
 }
 
@@ -73,8 +75,9 @@ function parseYahooChart(payload, sourceSymbol) {
     symbol: sourceSymbol,
     source: 'YAHOO_FINANCE_RESEARCH_ONLY',
     fetchedAt: new Date().toISOString(),
-    currency: result.meta?.currency || 'THB',
+    currency: result.meta?.currency || null,
     exchangeTimezone: result.meta?.exchangeTimezoneName || null,
+    exchangeName: result.meta?.exchangeName || null,
     candles,
     events: [...dividends, ...splits].sort((a, b) => a.date.localeCompare(b.date)),
   };
@@ -82,7 +85,7 @@ function parseYahooChart(payload, sourceSymbol) {
 
 async function fetchDailyHistory(symbol, options = {}) {
   const normalized = normalizeSymbol(symbol);
-  const querySymbol = yahooSymbol(normalized);
+  const querySymbol = yahooSymbol(normalized, options.market || 'TH');
   const range = options.range || '3y';
   const interval = options.interval || '1d';
   const url = `${YAHOO_HOST}/v8/finance/chart/${encodeURIComponent(querySymbol)}` +
