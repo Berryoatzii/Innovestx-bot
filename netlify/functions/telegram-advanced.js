@@ -22,8 +22,9 @@ const { buildBotReadiness, readinessText } = require('../lib/bot-readiness');
 const { runResearchBacktests } = require('./research-backtest');
 const { runStrategyShadow } = require('./strategy-shadow');
 const { runCoreReview } = require('./core-review');
+const { runSafetyDrill, readSafetyDrillStatus } = require('../lib/operational-safety-drill');
 
-const APP_VERSION = '8.6.0-thai-menu';
+const APP_VERSION = '8.7.0-safety-drill';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '');
 const APPROVER_USER_ID = String(process.env.TELEGRAM_APPROVER_USER_ID || '');
@@ -101,6 +102,7 @@ function commandDefinitions() {
     { command: 'shadow', description: 'อัปเดตพอร์ตทดลองแบบไม่ใช้เงินจริง' },
     { command: 'core', description: 'ตรวจพื้นฐานและ Thesis หุ้น CORE' },
     { command: 'whoami', description: 'ตรวจ Chat ID และสิทธิ์อนุมัติ' },
+    { command: 'safetydrill', description: 'ทดสอบอนุมัติ แจ้งเตือน และ one-order lock' },
     { command: 'version', description: 'ตรวจเวอร์ชันที่กำลัง Deploy' },
   ];
 }
@@ -128,6 +130,7 @@ function menuText() {
     '4) ตรวจระบบ',
     '/readiness — ดูว่ายังติดตรงไหน',
     '/whoami — ตรวจสิทธิ์ Telegram',
+    '/safetydrill — ทดสอบ Safety Gate โดยไม่สร้างหรือส่งออเดอร์',
     '/version — ตรวจเวอร์ชัน Bot',
     '',
     '⚠️ /buy และ /sell สร้างเพียงร่างออเดอร์ ต้องกดอนุมัติอีกครั้ง และใช้ได้เฉพาะหุ้น ACTIVE ที่จัดหมวดแล้ว',
@@ -203,6 +206,33 @@ function approvalKeyboard(intent) {
     [{ text: `✅ ตรวจและอนุมัติ ${intent.symbol}`, callback_data: `APV:${intent.id}` }],
     [{ text: `❌ ปฏิเสธ ${intent.symbol}`, callback_data: `REJ:${intent.id}` }],
   ];
+}
+
+function safetyDrillKeyboard() {
+  return [[{ text: '🛡 ยืนยัน Safety Drill (ไม่ใช่ออเดอร์)', callback_data: 'SDR:CONFIRM' }]];
+}
+
+async function handleSafetyDrillCallback(callback, update, event) {
+  if (String(callback.data || '') !== 'SDR:CONFIRM') return false;
+  if (!isAuthorizedApprover(update)) {
+    await answerCallback(callback.id, 'ผู้กดไม่ใช่ Approver ที่ตั้งไว้ ไม่มีการทำรายการ', true);
+    return true;
+  }
+  await answerCallback(callback.id, 'กำลังทดสอบ Safety Gate โดยไม่เรียกโบรกเกอร์...');
+  try {
+    const evidence = await runSafetyDrill(event, () => tgSend([
+      '🛡 AEGIS SAFETY ALERT TEST',
+      'Human approval callback: PASS',
+      'One-order lock: PASS (ครั้งที่สองถูกปฏิเสธ)',
+      'Broker call: NONE',
+      'Order intent: NONE',
+      'Money moving: NO',
+    ].join('\n')));
+    await tgSend(`✅ Safety Drill ผ่าน ${new Date(evidence.testedAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}`);
+  } catch (error) {
+    await tgSend(`🔴 Safety Drill ไม่ผ่าน: ${String(error.message || 'UNKNOWN').slice(0, 120)}\nไม่มีการเรียกโบรกเกอร์`);
+  }
+  return true;
 }
 
 async function handleClassificationCallback(callback, event) {
@@ -438,6 +468,19 @@ async function handleCommand(message, update, event) {
     return;
   }
 
+  if (command === '/safetydrill') {
+    if (!isAuthorizedApprover(update)) {
+      await tgSend('🔒 Safety Drill ต้องเรียกจาก Chat และ User ID ของ Approver ที่ตั้งไว้');
+      return;
+    }
+    await tgSend([
+      '🛡 Safety Drill — ไม่มีการซื้อขาย',
+      'การกดปุ่มจะทดสอบตัวตน Approver, การส่ง Alert และ one-order lock เท่านั้น',
+      'ระบบจะไม่สร้าง Order Intent และไม่เรียก Broker Gateway',
+    ].join('\n'), safetyDrillKeyboard());
+    return;
+  }
+
   if (command === '/setup') {
     await tgSend(`⏳ รับคำสั่งแล้ว — ${APP_VERSION}\nกำลังอ่านพอร์ตและเตรียมปุ่มจัดหมวด...`);
     await runOnboarding(event, { sendMessages: true });
@@ -515,6 +558,14 @@ exports.handler = async (event) => {
     return response(200, { ok: true, ...deploymentInfo(), blobInitialization: 'lazy' });
   }
 
+  if (action === 'safetyDrillStatus') {
+    try {
+      return response(200, await readSafetyDrillStatus(event));
+    } catch {
+      return response(200, { passed: false, safeDefault: true });
+    }
+  }
+
   if (action === 'setWebhook') {
     if (event.httpMethod !== 'POST' || !requireAdmin(event)) return response(401, { error: 'Unauthorized' });
     if (!WEBHOOK_SECRET) return response(503, { error: 'TELEGRAM_WEBHOOK_SECRET missing' });
@@ -559,6 +610,7 @@ exports.handler = async (event) => {
   }
 
   if (update.callback_query) {
+    if (await handleSafetyDrillCallback(update.callback_query, update, event)) return response(200, { ok: true });
     if (await handleClassificationCallback(update.callback_query, event)) return response(200, { ok: true });
     if (await handleApprovalCallback(update.callback_query, update, event)) return response(200, { ok: true });
     await answerCallback(update.callback_query.id, 'คำสั่งไม่ถูกต้อง', true);
@@ -592,4 +644,6 @@ module.exports._test = {
   safeEqual,
   getHeader,
   handleClassificationCallback,
+  handleSafetyDrillCallback,
+  safetyDrillKeyboard,
 };
