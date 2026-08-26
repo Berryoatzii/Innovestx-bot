@@ -24,6 +24,7 @@ function evaluateBacktestGate(result, requirements = {}) {
   const maximumDrawdown = Number(requirements.maximumDrawdown ?? -0.25);
   const requirePositiveReturn = requirements.requirePositiveReturn !== false;
   const requirePositiveExcess = requirements.requirePositiveExcess !== false;
+  const requireRobustness = requirements.requireRobustness !== false;
 
   const checks = {
     resultExists: Boolean(result),
@@ -34,12 +35,16 @@ function evaluateBacktestGate(result, requirements = {}) {
     drawdownWithinLimit: Number(metrics.maxDrawdown || 0) >= maximumDrawdown,
     finiteMetrics: [metrics.totalReturn, metrics.maxDrawdown, metrics.cagr]
       .every((value) => Number.isFinite(Number(value))),
+    robustnessPassed: !requireRobustness || result?.robustness?.passed === true,
   };
 
   return {
     passed: Object.values(checks).every(Boolean),
     checks,
-    requirements: { minimumTrades, minimumDecisions, maximumDrawdown, requirePositiveReturn, requirePositiveExcess },
+    requirements: {
+      minimumTrades, minimumDecisions, maximumDrawdown,
+      requirePositiveReturn, requirePositiveExcess, requireRobustness,
+    },
   };
 }
 
@@ -48,7 +53,7 @@ async function saveBacktestResult(symbol, result, event, requirements = {}) {
   const normalized = normalizeSymbol(symbol);
   const gate = evaluateBacktestGate(result, requirements);
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     symbol: normalized,
     recordedAt: new Date().toISOString(),
     gate,

@@ -99,7 +99,10 @@ function evaluateBenchmarkRegime(benchmarkCandles, options = {}) {
     now: options.now,
   });
   if (!quality.ok) return { tradable: false, reason: `BENCHMARK_${quality.reason}`, quality };
-  const closes = benchmarkCandles.map((item) => item.adjustedClose || item.close);
+  // Keep the technical series internally consistent. Yahoo's adjusted close
+  // cannot be compared with unadjusted OHLC highs/lows without adjusting every
+  // OHLC field and split quantity as well.
+  const closes = benchmarkCandles.map((item) => item.close);
   const ema200 = ema(closes, 200);
   const lastIndex = closes.length - 1;
   const current = closes[lastIndex];
@@ -125,7 +128,7 @@ function evaluateActiveStrategy(candles, options = {}) {
     };
   }
 
-  const closes = candles.map((item) => item.adjustedClose || item.close);
+  const closes = candles.map((item) => item.close);
   const volumes = candles.map((item) => Number(item.volume || 0));
   const ema20 = ema(closes, 20);
   const ema50 = ema(closes, 50);

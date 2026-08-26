@@ -20,7 +20,11 @@ function loadCostModel(env = process.env, policy = defaultPolicy) {
 
 function transactionCost(notional, model = loadCostModel()) {
   const value = Math.max(0, Number(notional || 0));
-  const commission = value * model.commissionRate;
+  const variableCommission = value * model.commissionRate;
+  const minimumCommission = Math.max(0, Number(model.minimumCommissionPerDay || 0));
+  const commission = value > 0
+    ? Math.max(variableCommission, minimumCommission)
+    : 0;
   const exchangeFees = value * (
     model.setTradingFeeRate +
     model.clearingFeeRate +

@@ -9,6 +9,7 @@ const {
   isExpired,
 } = require('../lib/order-intent-store');
 const { fetchRawOrders } = require('../lib/settrade-read');
+const { normalizeBrokerOrderState } = require('../lib/broker-order-status');
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
@@ -34,13 +35,28 @@ function postTelegram(text) {
 }
 
 function brokerStatusToIntentStatus(status) {
-  const value = String(status || '').toUpperCase();
-  if (value.includes('PART')) return 'PARTIALLY_FILLED';
-  if (value.includes('FILL') || value.includes('MATCH')) return 'FILLED';
-  if (value.includes('REJECT')) return 'REJECTED_BY_BROKER';
-  if (value.includes('CANCEL')) return 'CANCELLED';
-  if (value.includes('PEND') || value.includes('QUEUE') || value.includes('OPEN')) return 'ACKNOWLEDGED';
-  return 'ACKNOWLEDGED';
+  return normalizeBrokerOrderState(status);
+}
+
+function findUniqueUncertainOrder(intent, brokerOrders, claimedOrderIds = new Set()) {
+  const submittedAt = new Date(intent.broker?.submittedAt || 0).getTime();
+  if (!Number.isFinite(submittedAt) || submittedAt <= 0) return null;
+  const requestPrice = Number(intent.broker?.request?.price || intent.proposedPrice || 0);
+
+  const candidates = (Array.isArray(brokerOrders) ? brokerOrders : []).filter((order) => {
+    const entryAt = new Date(order.entryTime || 0).getTime();
+    const timeDistance = Math.abs(entryAt - submittedAt);
+    return order.id &&
+      !claimedOrderIds.has(String(order.id)) &&
+      String(order.symbol || '').toUpperCase() === intent.symbol &&
+      String(order.side || '').toUpperCase() === intent.side &&
+      Number(order.quantity) === Number(intent.quantity) &&
+      Math.abs(Number(order.price || 0) - requestPrice) <= 0.0001 &&
+      Number.isFinite(entryAt) &&
+      timeDistance <= 5 * 60 * 1000;
+  });
+
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 exports.handler = async (event = {}) => {
@@ -63,8 +79,9 @@ exports.handler = async (event = {}) => {
     }
   }
 
-  const activeStatuses = new Set(['SUBMITTED', 'RECONCILE_PENDING', 'ACKNOWLEDGED', 'PARTIALLY_FILLED']);
-  const active = intents.filter((item) => activeStatuses.has(item.status) && item.broker?.orderId);
+  const activeStatuses = new Set(['SUBMITTING', 'SUBMITTED', 'RECONCILE_PENDING', 'ACKNOWLEDGED', 'PARTIALLY_FILLED', 'EXECUTION_UNCERTAIN']);
+  const active = intents.filter((item) => activeStatuses.has(item.status) &&
+    (item.broker?.orderId || ['SUBMITTING', 'EXECUTION_UNCERTAIN'].includes(item.status)));
 
   let brokerOrders = [];
   if (active.length > 0) {
@@ -75,8 +92,12 @@ exports.handler = async (event = {}) => {
     }
   }
 
+  const claimedOrderIds = new Set(intents.map((item) => item.broker?.orderId).filter(Boolean).map(String));
+
   for (const intent of active) {
-    const matched = brokerOrders.find((order) => String(order.id || '') === String(intent.broker.orderId));
+    const matched = intent.broker?.orderId
+      ? brokerOrders.find((order) => String(order.id || '') === String(intent.broker.orderId))
+      : findUniqueUncertainOrder(intent, brokerOrders, claimedOrderIds);
     if (!matched) {
       const submittedAt = new Date(intent.broker?.submittedAt || 0).getTime();
       const oldEnough = Number.isFinite(submittedAt) && Date.now() - submittedAt > 15 * 60 * 1000;
@@ -97,13 +118,14 @@ exports.handler = async (event = {}) => {
       continue;
     }
 
-    const nextStatus = brokerStatusToIntentStatus(matched.status);
+    const nextStatus = normalizeBrokerOrderState(matched);
     if (nextStatus === intent.status) continue;
 
     try {
       const updated = await transitionIntent(intent.id, intent.status, nextStatus, {
         broker: {
           ...intent.broker,
+          orderId: intent.broker?.orderId || matched.id,
           reconciledAt: new Date().toISOString(),
           brokerStatus: matched.status,
           matchedQuantity: matched.matchedQuantity,
@@ -131,4 +153,4 @@ exports.handler = async (event = {}) => {
   };
 };
 
-module.exports._test = { brokerStatusToIntentStatus };
+module.exports._test = { brokerStatusToIntentStatus, findUniqueUncertainOrder };

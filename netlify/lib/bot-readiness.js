@@ -8,6 +8,9 @@ const { getSnapshot, snapshotFreshness } = require('./fundamental-snapshot-store
 const { getThesisCard, isThesisApproved } = require('./core-thesis-store');
 const { evaluateFundamentals } = require('./fundamental-scorecard');
 const { approvalAvailability } = require('./approval-executor');
+const { loadReleaseConfig } = require('./release-config');
+const releaseConfig = loadReleaseConfig();
+const { evaluateReleaseEvidence, deriveReadinessStages } = require('./real-money-release');
 
 async function inspectCoreEvidence(symbols, event) {
   const rows = [];
@@ -76,6 +79,10 @@ async function buildBotReadiness(event = {}) {
   const shadowGate = evaluateShadowGate(reports, {
     minimumDays: policy.research.minimumShadowTradingDays,
     minimumEvents: policy.research.minimumDecisionEvents,
+    minimumTradeEvents: policy.research.minimumShadowTradeEvents,
+    maximumDrawdown: policy.research.maximumShadowDrawdown,
+    minimumAfterCostReturn: policy.research.minimumAfterCostReturn,
+    minimumExcessReturn: policy.research.minimumBenchmarkExcessReturn,
   });
   if (!shadowGate.passed) {
     blockers.push(`SHADOW_${shadowGate.tradingDays}D_${shadowGate.decisionEvents}EVENTS`);
@@ -96,19 +103,23 @@ async function buildBotReadiness(event = {}) {
   if (!telegramReady) blockers.push('TELEGRAM_APPROVER_NOT_FULLY_CONFIGURED');
 
   const approval = approvalAvailability();
-  const observeReady = brokerConnected && telegramReady;
-  const researchReady = observeReady && classification.complete && (activeSymbols.length + coreSymbols.length > 0);
-  const proposalReady = researchReady && activePassed > 0 && shadowGate.passed;
-  const livePilotReady = proposalReady && approval.ready;
+  const releaseEvidence = evaluateReleaseEvidence(releaseConfig);
+  blockers.push(...releaseEvidence.blockers);
+  const stages = deriveReadinessStages({
+    brokerConnected,
+    telegramReady,
+    classificationComplete: classification.complete,
+    hasResearchSymbols: activeSymbols.length + coreSymbols.length > 0,
+    activePassed,
+    shadowPassed: shadowGate.passed,
+    approvalReady: approval.ready,
+    releasePassed: releaseEvidence.passed,
+    blockers,
+  });
 
   return {
     generatedAt: new Date().toISOString(),
-    stages: {
-      observeReady,
-      researchReady,
-      proposalReady,
-      livePilotReady,
-    },
+    stages,
     broker: {
       connected: brokerConnected,
       error: brokerError,
@@ -135,6 +146,7 @@ async function buildBotReadiness(event = {}) {
     },
     shadowGate,
     approval,
+    releaseEvidence,
     blockers: [...new Set(blockers)],
   };
 }

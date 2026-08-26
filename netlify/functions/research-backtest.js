@@ -1,7 +1,7 @@
 const https = require('https');
 const { loadEffectivePortfolioPolicy } = require('../lib/effective-portfolio-policy');
 const { fetchDailyHistory } = require('../lib/research-market-data');
-const { backtestActiveStrategy } = require('../lib/backtest-engine');
+const { runBacktestValidationSuite } = require('../lib/backtest-engine');
 const { saveBacktestResult } = require('../lib/research-results-store');
 
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
@@ -55,13 +55,49 @@ async function runResearchBacktests(event = {}, options = {}) {
   for (const symbol of symbols.slice(0, 10)) {
     try {
       const history = await fetchDailyHistory(symbol, { range: '10y' });
-      const result = backtestActiveStrategy(history.candles, benchmark.candles, {
+      const validation = runBacktestValidationSuite(history.candles, benchmark.candles, {
         symbol,
         initialCapital: Number(process.env.BACKTEST_INITIAL_CAPITAL || 100000),
         maxPositionWeight: policy.active.maxPositionWeight,
         boardLot: Number(process.env.PROPOSAL_BOARD_LOT || 100),
         benchmark: 'SET_INDEX_PROXY',
+        minimumStressTrades: Number(process.env.BACKTEST_MINIMUM_TRADES || 5),
+        minimumStressReturn: Number(process.env.BACKTEST_STRESS_MIN_RETURN || 0),
+        maximumStressDrawdown: Number(process.env.BACKTEST_STRESS_MAX_DRAWDOWN || -0.25),
+        oosBars: Number(process.env.BACKTEST_HOLDOUT_BARS || 504),
+        minimumHoldoutTrades: Number(process.env.BACKTEST_HOLDOUT_MIN_TRADES || 3),
       });
+      const stress = validation.fullSample;
+      const result = {
+        ...stress.baseline,
+        robustness: {
+          schemaVersion: validation.schemaVersion,
+          passed: validation.passed,
+          fullSamplePassed: stress.passed,
+          recentHoldoutPassed: validation.recentHoldout.passed,
+          recentHoldoutStartDate: validation.recentHoldout.startDate,
+          requirements: stress.requirements,
+          checks: stress.checks,
+          scenarios: stress.scenarios.map((row) => ({
+            id: row.id,
+            assumptions: row.assumptions,
+            metrics: row.metrics,
+          })),
+          worstTotalReturn: stress.worstTotalReturn,
+          worstDrawdown: stress.worstDrawdown,
+          recentHoldout: {
+            requirements: validation.recentHoldout.requirements,
+            checks: validation.recentHoldout.checks,
+            scenarios: validation.recentHoldout.scenarios.map((row) => ({
+              id: row.id,
+              assumptions: row.assumptions,
+              metrics: row.metrics,
+            })),
+            worstTotalReturn: validation.recentHoldout.worstTotalReturn,
+            worstDrawdown: validation.recentHoldout.worstDrawdown,
+          },
+        },
+      };
       const stored = await saveBacktestResult(symbol, result, event, {
         minimumTrades: Number(process.env.BACKTEST_MINIMUM_TRADES || 5),
         minimumDecisions: Number(process.env.BACKTEST_MINIMUM_DECISIONS || 100),

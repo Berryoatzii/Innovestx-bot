@@ -627,13 +627,8 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
           oninput="updateOrderSummary()"/>
       </div>
     </div>
-    <!-- PIN field -->
-    <div style="margin-bottom:12px">
-      <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:5px">
-        🔒 Trading PIN <span style="color:#546e7a">(ถ้าตั้ง INVX_PIN ใน Netlify แล้ว ไม่ต้องกรอก)</span>
-      </div>
-      <input id="orderPinInp" type="password" maxlength="10" placeholder="PIN ของ InnovestX"
-        style="width:100%;background:rgba(3,5,8,.9);border:1px solid rgba(255,193,7,.2);border-radius:6px;padding:8px 12px;color:#d0daf0;font-family:'Share Tech Mono',monospace;font-size:16px;outline:none;letter-spacing:4px"/>
+    <div style="margin-bottom:12px;color:var(--yellow);font-size:12px;text-align:center">
+      🔒 หน้านี้เป็นตัวอย่างเท่านั้น ระบบไม่รับ PIN และไม่ส่งคำสั่งซื้อขายจากเบราว์เซอร์
     </div>
     <div id="orderSummaryLine" style="font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--dim);margin-bottom:4px;text-align:center"></div>
     <div style="font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);margin-bottom:12px;text-align:center">
@@ -642,7 +637,7 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 
     <div class="mw" id="modalWarn"></div>
     <div class="mb2">
-      <button class="btn-confirm" id="confirmBtn" onclick="executeOrder()">✓ ยืนยันส่งคำสั่ง</button>
+      <button class="btn-confirm" id="confirmBtn" onclick="executeOrder()">สร้างร่างผ่าน Telegram</button>
       <button class="btn-cancel-m" onclick="closeModal()">✕ ยกเลิก</button>
     </div>
   </div>
@@ -666,7 +661,7 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
     <div class="ct-mode-wrap">
       <span class="ct-sw-label">Trading Mode</span>
       <label class="ct-sw">
-        <input type="checkbox" id="ctModeChk" onchange="ctToggleMode()">
+        <input type="checkbox" id="ctModeChk" disabled aria-label="ระบบส่งคำสั่งจากกราฟถูกปิด">
         <span class="ct-sl"></span>
       </label>
       <span id="ctModeLbl" class="ct-mode-lbl">OFF</span>
@@ -693,7 +688,7 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
         <div class="ct-lbl">ราคา (0 = ATO)</div>
         <input class="ct-field" id="ctPriceF" type="number" step="0.01" min="0" placeholder="0">
         <div class="ct-lbl">PIN InnovestX</div>
-        <input class="ct-field" id="ctPinF" type="password" maxlength="10" placeholder="รหัส PIN">
+        <input class="ct-field" type="hidden" disabled>
         <div class="ct-btns">
           <button class="ct-buy" onclick="ctOrder('Buy')">🟢 ซื้อ</button>
           <button class="ct-sell" onclick="ctOrder('Sell')">🔴 ขาย</button>
@@ -708,6 +703,14 @@ body::before{content:'';position:fixed;inset:0;z-index:9999;pointer-events:none;
 <script>
 // 🟢 ระบบแก้ปัญหา HTTP Cache 🟢
 const originalFetch = window.fetch;
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  })[ch]);
+}
+function renderAiText(value) {
+  return escapeHtml(value).replace(/\r?\n/g, '<br>');
+}
 window.fetch = async function(...args) {
   let [resource, config] = args;
   if (typeof resource === 'string' && resource.includes('/api/invx')) {
@@ -969,7 +972,7 @@ async function sendChat(){
   const msg=inp.value.trim();if(!msg)return;
   inp.value='';
   const box=document.getElementById('chatBox');
-  box.innerHTML+='<div style="color:var(--accent);margin-top:10px;font-size:16px;font-weight:bold">🙋 '+msg+'</div>';
+  box.innerHTML+='<div style="color:var(--accent);margin-top:10px;font-size:16px;font-weight:bold">🙋 '+escapeHtml(msg)+'</div>';
   const tid='t'+Date.now();
   box.innerHTML+='<div id="'+tid+'" style="color:var(--dim);font-style:italic;font-size:14px;animation:pulse 1s infinite">'+curExpert.name+' กำลังคิด...</div>';
   box.scrollTop=box.scrollHeight;
@@ -977,7 +980,7 @@ async function sendChat(){
   try{
     const data = await callAI('chat',{expertId:curExpert.id,message:msg,portfolio:PORTFOLIO});
     if(data){
-      let reply=data.reply||'ไม่ได้รับคำตอบ';
+      let reply=renderAiText(data.reply||'ไม่ได้รับคำตอบ');
       reply=reply.replace(/ซื้อ/g,'<span style="color:var(--green);font-weight:bold">ซื้อ</span>').replace(/ขาย/g,'<span style="color:var(--red);font-weight:bold">ขาย</span>').replace(/ถือ/g,'<span style="color:var(--yellow);font-weight:bold">ถือ</span>');
       const el=document.getElementById(tid);
       if(el)el.outerHTML='<div style="color:#d0daf0;font-size:16px;line-height:1.9;margin-top:10px;padding-left:14px;border-left:3px solid '+curExpert.color+'">'+reply+'</div>';
@@ -987,7 +990,7 @@ async function sendChat(){
     }
   }catch(err){
     const el=document.getElementById(tid);
-    if(el)el.outerHTML='<div style="color:var(--red);font-size:14px">❌ '+err.message+'</div>';
+    if(el)el.outerHTML='<div style="color:var(--red);font-size:14px">❌ '+escapeHtml(err.message)+'</div>';
     addLog('err','AI error: '+err.message);
   }
   document.getElementById('sendBtn').disabled=false;
@@ -1004,12 +1007,12 @@ async function runStressTest() {
     const data = await callAI('chat', {expertId: 'dalio', message: prompt, portfolio: PORTFOLIO});
     
     if(data) {
-      let txt = (data.reply || 'ไม่สามารถทดสอบได้').replace(/\n/g, '<br>');
+      let txt = renderAiText(data.reply || 'ไม่สามารถทดสอบได้');
       el.innerHTML = '<div style="color:var(--accent);font-family:monospace;font-size:14px;margin-bottom:10px;font-weight:bold">✨ <b>ผลจำลองวิกฤต Portfolio Stress Test (โดย Ray Dalio)</b></div><div style="line-height:1.9">' + txt + '</div>';
       addLog('info', '✨ ทำการทดสอบ Stress Test พอร์ตเรียบร้อย');
     }
   } catch(err) {
-    el.innerHTML = '<div style="color:var(--red);font-size:14px">❌ ' + err.message + '</div>';
+    el.innerHTML = '<div style="color:var(--red);font-size:14px">❌ ' + escapeHtml(err.message) + '</div>';
   }
 }
 
@@ -1030,12 +1033,12 @@ async function analyzePortfolio(expertId){
     const data=await callAI('analyzePortfolio',{expertId,portfolio:PORTFOLIO});
     if(data){
       const e=EXPERTS.find(x=>x.id===expertId);
-      let txt=data.analysis||'';
+      let txt=renderAiText(data.analysis||'');
       txt=txt.replace(/ซื้อ/g,'<span style="color:var(--green);font-weight:bold">ซื้อ</span>').replace(/ขาย/g,'<span style="color:var(--red);font-weight:bold">ขาย</span>').replace(/ถือ/g,'<span style="color:var(--yellow);font-weight:bold">ถือ</span>');
-      el.innerHTML='<div style="color:'+(e?.color||'#ffc107')+';font-family:monospace;font-size:14px;margin-bottom:10px;font-weight:bold">'+(data.expert || e.name)+'</div><div style="line-height:1.9">'+txt+'</div>';
+      el.innerHTML='<div style="color:'+(e?.color||'#ffc107')+';font-family:monospace;font-size:14px;margin-bottom:10px;font-weight:bold">'+escapeHtml(data.expert || e.name)+'</div><div style="line-height:1.9">'+txt+'</div>';
       addLog('ok',(data.expert || e.name)+' วิเคราะห์พอร์ตเสร็จแล้ว');
     }
-  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+err.message+'</div>';}
+  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+escapeHtml(err.message)+'</div>';}
 }
 
 async function loadStockPicks(expertId){
@@ -1045,12 +1048,11 @@ async function loadStockPicks(expertId){
     const data=await callAI('stockPicks',{expertId});
     if(data){
       const e=EXPERTS.find(x=>x.id===expertId);
-      let txt=data.picks||'';
-      txt=txt.split('\n').join('<br>');
-      el.innerHTML='<div style="color:'+(e?.color||'#ffc107')+';font-family:monospace;font-size:14px;margin-bottom:10px;font-weight:bold">'+(data.expert || e.name)+' แนะนำ:</div><div style="line-height:1.9">'+txt+'</div>';
+      let txt=renderAiText(data.picks||'');
+      el.innerHTML='<div style="color:'+(e?.color||'#ffc107')+';font-family:monospace;font-size:14px;margin-bottom:10px;font-weight:bold">'+escapeHtml(data.expert || e.name)+' แนะนำ:</div><div style="line-height:1.9">'+txt+'</div>';
       addLog('ok',(data.expert || e.name)+' แนะนำหุ้นน่าสนใจแล้ว');
     }
-  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+err.message+'</div>';}
+  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+escapeHtml(err.message)+'</div>';}
 }
 
 async function loadNewsImpact(){
@@ -1059,11 +1061,11 @@ async function loadNewsImpact(){
   try{
     const data=await callAI('newsImpact',{portfolio:PORTFOLIO});
     if(data){
-      let txt=(data.news||'').split('\n').join('<br>');
+      let txt=renderAiText(data.news||'');
       el.innerHTML='<div style="line-height:1.9">'+txt+'</div>';
       addLog('info','วิเคราะห์ข่าวผลกระทบพอร์ตเสร็จแล้ว');
     }
-  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+err.message+'</div>';}
+  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+escapeHtml(err.message)+'</div>';}
 }
 
 async function loadDailyBrief(){
@@ -1072,17 +1074,19 @@ async function loadDailyBrief(){
   try{
     const data=await callAI('dailyBrief',{portfolio:PORTFOLIO});
     if(data){
-      let txt=(data.brief||'').replace(/\n/g,'<br>');
+      let txt=renderAiText(data.brief||'');
       el.innerHTML='<div style="line-height:1.9">'+txt+'</div>';
       addLog('ok','Daily Brief อัปเดตแล้ว ✓');
     }
-  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+err.message+'</div>';}
+  }catch(err){el.innerHTML='<div style="color:var(--red);font-size:14px">❌ '+escapeHtml(err.message)+'</div>';}
 }
 
-let PORTFOLIO = [{"sym": "PM", "qty": 800, "avg": 9.73, "mkt": 10.8, "pnl_pct": 11.01}, {"sym": "TIPH", "qty": 300, "avg": 33.56, "mkt": 21.4, "pnl_pct": -36.23}, {"sym": "TCAP", "qty": 100, "avg": 34.06, "mkt": 61.25, "pnl_pct": 79.85}, {"sym": "TACC", "qty": 1000, "avg": 5.38, "mkt": 5.8, "pnl_pct": 7.73}, {"sym": "TKS", "qty": 720, "avg": 9.39, "mkt": 7.3, "pnl_pct": -22.26}, {"sym": "KGI", "qty": 900, "avg": 6.19, "mkt": 4.32, "pnl_pct": -30.19}, {"sym": "ARROW", "qty": 700, "avg": 8.11, "mkt": 5.3, "pnl_pct": -34.68}, {"sym": "ASEFA", "qty": 600, "avg": 4.03, "mkt": 5.5, "pnl_pct": 36.59}, {"sym": "ICN", "qty": 1500, "avg": 4.67, "mkt": 2.12, "pnl_pct": -54.62}, {"sym": "RATCH", "qty": 100, "avg": 31.55, "mkt": 30.75, "pnl_pct": -2.54}, {"sym": "PTL", "qty": 300, "avg": 15.51, "mkt": 10.2, "pnl_pct": -34.23}, {"sym": "SMPC", "qty": 300, "avg": 11.52, "mkt": 9.1, "pnl_pct": -21.0}, {"sym": "MBAX", "qty": 1400, "avg": 3.59, "mkt": 1.87, "pnl_pct": -47.85}, {"sym": "SNC", "qty": 300, "avg": 8.71, "mkt": 6.85, "pnl_pct": -21.4}, {"sym": "MFC", "qty": 100, "avg": 22.74, "mkt": 19.0, "pnl_pct": -16.44}, {"sym": "AIT", "qty": 400, "avg": 6.03, "mkt": 4.72, "pnl_pct": -21.69}, {"sym": "WINNER", "qty": 900, "avg": 2.18, "mkt": 2.08, "pnl_pct": -4.65}, {"sym": "ASK", "qty": 200, "avg": 34.68, "mkt": 9.2, "pnl_pct": -73.47}, {"sym": "LH", "qty": 500, "avg": 7.74, "mkt": 3.64, "pnl_pct": -52.99}, {"sym": "LALIN", "qty": 400, "avg": 8.97, "mkt": 4.36, "pnl_pct": -51.37}, {"sym": "GC", "qty": 380, "avg": 4.93, "mkt": 4.5, "pnl_pct": -8.71}, {"sym": "SAT", "qty": 100, "avg": 14.12, "mkt": 15.5, "pnl_pct": 9.75}, {"sym": "TSC", "qty": 100, "avg": 13.92, "mkt": 14.8, "pnl_pct": 6.3}, {"sym": "TMILL", "qty": 600, "avg": 3.81, "mkt": 2.3, "pnl_pct": -39.58}, {"sym": "RJH", "qty": 100, "avg": 32.81, "mkt": 12.9, "pnl_pct": -60.68}, {"sym": "BIS", "qty": 500, "avg": 12.3, "mkt": 2.06, "pnl_pct": -83.25}, {"sym": "DRT", "qty": 200, "avg": 7.61, "mkt": 5.0, "pnl_pct": -34.32}, {"sym": "PDG", "qty": 300, "avg": 3.63, "mkt": 3.12, "pnl_pct": -13.96}, {"sym": "FVC", "qty": 3000, "avg": 1.62, "mkt": 0.31, "pnl_pct": -80.9}, {"sym": "IFS", "qty": 500, "avg": 2.42, "mkt": 1.84, "pnl_pct": -24.09}, {"sym": "TPIPP", "qty": 500, "avg": 4.39, "mkt": 1.78, "pnl_pct": -59.43}, {"sym": "CAZ", "qty": 500, "avg": 5.06, "mkt": 1.55, "pnl_pct": -69.36}, {"sym": "AS", "qty": 300, "avg": 18.6, "mkt": 2.4, "pnl_pct": -87.1}, {"sym": "CAZ_R", "qty": 300, "avg": 3.99, "mkt": 1.55, "pnl_pct": -61.12}, {"sym": "CWT_R", "qty": 300, "avg": 2.86, "mkt": 0.76, "pnl_pct": -73.47}];
+// Private positions are fetched only by authenticated server-side workflows.
+// Never publish account holdings, quantities, or costs in the static bundle.
+let PORTFOLIO = [];
 let TRANSACTIONS = [];
 
-const AI_TAGS={PM:'DCA',TIPH:'Cut?',TCAP:'Hold',TACC:'Hold',TKS:'Cut?',KGI:'DCA',ARROW:'Cut?',ASEFA:'Hold',ICN:'Cut',RATCH:'Hold',PTL:'Cut?',SMPC:'Cut?',MBAX:'Cut',SNC:'Cut?',MFC:'Hold',AIT:'Cut?',WINNER:'Hold',ASK:'Cut',LH:'Cut',LALIN:'Cut',GC:'Hold',SAT:'Hold',TSC:'Hold',TMILL:'Cut?',RJH:'Cut',BIS:'Cut!',DRT:'Cut?',PDG:'Hold?',FVC:'Cut!',IFS:'Cut?',TPIPP:'Cut?',CAZ:'Cut!',AS:'Cut!',CAZ_R:'Cut!',CWT_R:'Cut!'};
+const AI_TAGS={};
 
 function fmt(n){return n.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function fmtB(n){return '฿'+Math.abs(n).toLocaleString('th-TH',{maximumFractionDigits:0});}
@@ -1222,7 +1226,7 @@ function addTransaction(sym,side,qty,price){
 function renderTxLog(){
   const el=document.getElementById('txLog');
   if(!TRANSACTIONS.length){el.innerHTML='<div class="tx-empty">ยังไม่มีรายการวันนี้<br><span style="font-size:12px;color:var(--dim)">เมื่อซื้อหรือขาย จะแสดงที่นี่</span></div>';return;}
-  el.innerHTML=TRANSACTIONS.map(tx=>'<div class="tx-item"><span class="tx-time">'+tx.time+'</span><span class="tx-side-'+(tx.side==='BUY'?'b':'s')+'">'+(tx.side==='BUY'?'ซื้อ':'ขาย')+'</span><span class="tx-sym">'+tx.sym+'</span><span style="color:var(--dim);font-size:13px">'+tx.qty.toLocaleString()+' หุ้น @ '+fmt(tx.price)+'</span><span style="color:'+(tx.side==='BUY'?'var(--red)':'var(--green)')+';font-family:monospace;font-size:13px;margin-left:auto;font-weight:bold">'+fmtB(tx.value)+'</span></div>').join('');
+  el.innerHTML=TRANSACTIONS.map(tx=>'<div class="tx-item"><span class="tx-time">'+escapeHtml(tx.time)+'</span><span class="tx-side-'+(tx.side==='BUY'?'b':'s')+'">'+(tx.side==='BUY'?'ซื้อ':'ขาย')+'</span><span class="tx-sym">'+escapeHtml(tx.sym)+'</span><span style="color:var(--dim);font-size:13px">'+Number(tx.qty||0).toLocaleString()+' หุ้น @ '+fmt(Number(tx.price||0))+'</span><span style="color:'+(tx.side==='BUY'?'var(--red)':'var(--green)')+';font-family:monospace;font-size:13px;margin-left:auto;font-weight:bold">'+fmtB(Number(tx.value||0))+'</span></div>').join('');
 }
 
 let pendingOrder=null;
@@ -1315,67 +1319,7 @@ function updateOrderSummary() {
 }
 
 async function executeOrder(){
-  if(!pendingOrder) return;
-
-  // Read possibly-edited qty and price from modal inputs
-  const editedQty   = parseInt(document.getElementById('orderQtyInp')?.value)    || pendingOrder.qty;
-  const editedPrice = parseFloat(document.getElementById('orderPriceInp')?.value) || 0;
-  const o = { ...pendingOrder, qty: editedQty, price: editedPrice.toFixed(2) };
-
-  const confirmBtn = document.getElementById('confirmBtn');
-  confirmBtn.disabled = true;
-  confirmBtn.textContent = '⏳ กำลังส่ง...';
-
-  if(!window._apiConnected){
-    showToast('กด CONNECT เพื่อเชื่อมต่อก่อน','warn');
-    confirmBtn.disabled = false;
-    confirmBtn.textContent = '✓ ยืนยันส่งคำสั่ง';
-    closeModal();
-    return;
-  }
-  try{
-    const pinVal = document.getElementById('orderPinInp')?.value?.trim() || '';
-    const body = {
-      ticker:     o.sym,
-      side:       o.side,
-      quantity:   o.qty,
-      order_type: 'MP-MTL',
-      price:      editedPrice > 0 ? editedPrice : 0,
-    };
-    if (pinVal) body.pin = pinVal;
-
-    const res = await originalFetch('/api/invx?action=order', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'api-key': window._apiKey||'', 'api-secret': window._apiSecret||'' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-
-    if(res.ok && data._success !== false){
-      const orderId = data.orderId || data.order_id || data.orderNo || data.data?.orderId || '—';
-      addLog('ok', '✅ '+o.side+' '+o.sym+' '+o.qty.toLocaleString()+'หุ้น @฿'+o.price+' | OrderID: '+orderId);
-      addTransaction(o.sym, o.side, o.qty, parseFloat(o.price)||0);
-      showToast((o.side==='SELL'?'ขาย ':'ซื้อ ')+o.sym+' '+o.qty.toLocaleString()+'หุ้น — ส่งสำเร็จ!', 'ok');
-      if(o.side==='SELL'){
-        const idx = PORTFOLIO.findIndex(p => p.sym === o.sym);
-        if(idx >= 0){ PORTFOLIO[idx].qty -= o.qty; if(PORTFOLIO[idx].qty <= 0) PORTFOLIO.splice(idx,1); }
-      }
-      renderPort();
-    } else {
-      // Show actual InnovestX error message
-      const rawResp = data._raw || data;
-      const errMsg = data._error_msg || data.message || data.error ||
-        JSON.stringify(rawResp).slice(0, 250);
-      addLog('err', '❌ InnovestX: '+errMsg);
-      showToast('❌ '+errMsg, 'err');
-      console.error('[Order] Raw InnovestX:', rawResp);
-    }
-  }catch(err){
-    addLog('err','Network error: '+err.message);
-    showToast('Network error: '+err.message,'err');
-  }
-  confirmBtn.disabled = false;
-  confirmBtn.textContent = '✓ ยืนยันส่งคำสั่ง';
+  showToast('ปิดการส่งคำสั่งจากหน้าเว็บ กรุณาใช้ร่างคำสั่งผ่าน Telegram', 'warn');
   closeModal();
 }
 function closeModal(){document.getElementById('orderModal').classList.remove('open');pendingOrder=null;}
@@ -1405,13 +1349,13 @@ async function connectAll(){
   const st=document.getElementById('apiSt');
   st.textContent='กำลังเชื่อม...';st.style.color='var(--yellow)';
   let invxOk=false,aiOk=false;
-  const useServer = window._useServerKeys || true;
+  const useServer = window._useServerKeys === true;
   if(useServer || (key&&sec)){
     try{
       const headers = useServer ? {'Content-Type':'application/json'} : {'api-key':key,'api-secret':sec};
       const r=await originalFetch('/api/invx?action=getData',{headers});
       const d=await r.json();
-      if(r.ok || r.status===401){
+      if(r.ok){
         window._apiKey=key;window._apiSecret=sec;window._apiConnected=true;invxOk=true;
         document.getElementById('api-dot').style.cssText='background:var(--green);box-shadow:0 0 6px var(--green)';
         if(d.portfolio&&d.portfolio.length>0){PORTFOLIO=d.portfolio;addLog('ok','✅ โหลดพอร์ตจริง '+d.portfolio.length+' ตัวจาก InnovestX');} 
@@ -1455,7 +1399,8 @@ function addLog(type,msg){
   const el=document.getElementById('alLog');
   const n=new Date(),t=String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');
   const d=document.createElement('div');d.className='al-row';
-  d.innerHTML='<span class="al-t">'+t+'</span><span class="al-'+type+'" style="font-weight:bold">'+msg+'</span>';
+  const safeType = ['ok','warn','err','info'].includes(type) ? type : 'info';
+  d.innerHTML='<span class="al-t">'+escapeHtml(t)+'</span><span class="al-'+safeType+'" style="font-weight:bold">'+escapeHtml(msg)+'</span>';
   el.prepend(d);if(el.children.length>40)el.lastChild.remove();
 }
 
@@ -1805,7 +1750,7 @@ async function runPortfolioCouncil(silent = false){
     if(councilRunCount >= 5) unlockAchievement('council_x5');
     chars.forEach(ch => { if(Object.keys(AGENT_COLORS).includes(ch.e.id)){ ch.speechText='📊 วิเคราะห์!'; ch.speechTimer=5; } });
   } catch(err){
-    document.getElementById('chamber').innerHTML = `<div style="color:var(--red);padding:20px">❌ ${err.message}</div>`;
+    document.getElementById('chamber').innerHTML = `<div style="color:var(--red);padding:20px">❌ ${escapeHtml(err.message)}</div>`;
     status.textContent = '❌ ' + err.message;
     status.className = 'council-status';
     addLog('err','7-Layer error: '+err.message);
@@ -1824,7 +1769,7 @@ function renderCouncilFromLayered(data) {
   if (regime.type) {
     const rd = document.createElement('div');
     rd.style.cssText = 'margin-bottom:16px;padding:12px;background:rgba(255,193,7,.04);border:1px solid rgba(255,193,7,.2);border-radius:10px';
-    rd.innerHTML = `<div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--gold);font-weight:bold;margin-bottom:6px">🌍 MARKET REGIME: ${regime.type}</div><div style="font-size:14px;line-height:1.7">${regime.summary || ''}</div>`;
+    rd.innerHTML = `<div style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--gold);font-weight:bold;margin-bottom:6px">🌍 MARKET REGIME: ${escapeHtml(regime.type)}</div><div style="font-size:14px;line-height:1.7">${renderAiText(regime.summary || '')}</div>`;
     chamber.appendChild(rd);
   }
 
@@ -1880,7 +1825,7 @@ function renderCouncilFromLayered(data) {
   if (summary.avg_portfolio_score) {
     const footer = document.createElement('div');
     footer.style.cssText = 'margin-top:12px;padding:12px;background:rgba(255,193,7,.04);border:1px solid rgba(255,193,7,.15);border-radius:8px;text-align:center';
-    footer.innerHTML = `<div style="font-family:'Cinzel',serif;font-size:22px;color:var(--gold);font-weight:bold">${summary.avg_portfolio_score}<span style="font-size:14px">/100</span></div><div style="font-family:monospace;font-size:11px;color:var(--dim)">PORTFOLIO SCORE (7-Layer Avg)</div>`;
+    footer.innerHTML = `<div style="font-family:'Cinzel',serif;font-size:22px;color:var(--gold);font-weight:bold">${Number(summary.avg_portfolio_score||0).toFixed(1)}<span style="font-size:14px">/100</span></div><div style="font-family:monospace;font-size:11px;color:var(--dim)">PORTFOLIO SCORE (7-Layer Avg)</div>`;
     chamber.appendChild(footer);
   }
 
@@ -1912,7 +1857,7 @@ async function runMarketCouncil(){
     addLog('ok','🌍 Council: ภาพรวมตลาดเสร็จแล้ว');
     unlockAchievement('first_council');
   } catch(err){
-    document.getElementById('chamber').innerHTML = `<div style="color:var(--red);padding:20px">❌ ${err.message}</div>`;
+    document.getElementById('chamber').innerHTML = `<div style="color:var(--red);padding:20px">❌ ${escapeHtml(err.message)}</div>`;
     status.textContent = '❌ ' + err.message;
     status.className = 'council-status';
   }
@@ -1938,7 +1883,7 @@ async function runCustomCouncil(){
     addLog('ok','⚔️ Council: '+topic.slice(0,30));
     unlockAchievement('first_council');
   } catch(err){
-    document.getElementById('chamber').innerHTML = `<div style="color:var(--red);padding:20px">❌ ${err.message}</div>`;
+    document.getElementById('chamber').innerHTML = `<div style="color:var(--red);padding:20px">❌ ${escapeHtml(err.message)}</div>`;
     status.textContent = '❌ ' + err.message;
     status.className = 'council-status';
   }
@@ -2056,7 +2001,7 @@ async function triggerAutoTrader(mode) {
       if(data.regime) applyAIGrades({ stocks: data.analyzed, regime: data.regime, summary: {} });
     }
   } catch(err) {
-    el.innerHTML = `<div style="color:var(--red)">❌ ${err.message}</div>`;
+    el.innerHTML = `<div style="color:var(--red)">❌ ${escapeHtml(err.message)}</div>`;
     setAtStatus('error', '❌ ERROR');
     addLog('err', '🤖 AutoTrader error: ' + err.message);
   } finally {
@@ -2281,41 +2226,12 @@ async function ctUpdateQuote(sym) {
 }
 
 async function ctOrder(side) {
-  if (!CT.trading) {
-    document.getElementById('ctResult').innerHTML = '<span style="color:var(--yellow)">⚠️ เปิด Trading Mode ก่อน</span>';
-    return;
-  }
-  const sym = CT.sym; if (!sym) return;
-  const qty = parseInt(document.getElementById('ctQtyF').value)||0;
-  const price = parseFloat(document.getElementById('ctPriceF').value)||0;
-  const pin = document.getElementById('ctPinF').value.trim();
-  if (qty<=0){document.getElementById('ctResult').innerHTML='<span style="color:var(--red)">❌ ใส่จำนวนหุ้น</span>';return;}
-  const ptxt = price>0?`฿${price.toFixed(2)}`:'ราคาตลาด (ATO)';
-  if (!confirm(`${side==='Buy'?'🟢 ซื้อ':'🔴 ขาย'} ${sym} ${qty.toLocaleString()} หุ้น @ ${ptxt} ?`)) return;
-  document.getElementById('ctResult').innerHTML = '<span style="color:var(--dim)">⏳ กำลังส่ง...</span>';
-  const body = {ticker:sym, side, quantity:qty, price};
-  if (pin) body.pin = pin;
-  try {
-    const resp = await originalFetch('/api/invx?action=order',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','api-key':window._apiKey||'','api-secret':window._apiSecret||''},
-      body:JSON.stringify(body),
-    });
-    const data = await resp.json();
-    if (data._success) {
-      const oid = data.orderNo||data.orderId||'OK';
-      document.getElementById('ctResult').innerHTML = `<span style="color:var(--green)">✅ ${side==='Buy'?'ซื้อ':'ขาย'} ${sym} ×${qty}<br>Order ID: ${oid}</span>`;
-      addLog('ok',`✅ [Chart] ${side} ${sym} ×${qty} @฿${price||'MKT'} ID:${oid}`);
-      addTransaction(sym,side.toUpperCase(),qty,price);
-      addXP(side==='Sell'?20:10);
-    } else {
-      const e = data._error_msg||JSON.stringify(data._raw||data).slice(0,150);
-      document.getElementById('ctResult').innerHTML = `<span style="color:var(--red)">❌ ${e}</span>`;
-      addLog('err',`[Chart] ${side} ${sym}: ${e}`);
-    }
-  } catch(e) {
-    document.getElementById('ctResult').innerHTML = `<span style="color:var(--red)">❌ ${e.message}</span>`;
-  }
+  // Direct chart execution is permanently disabled. Orders must originate
+  // from a durable, signed intent and pass human approval plus broker checks.
+  CT.trading = false;
+  const result = document.getElementById('ctResult');
+  if (result) result.textContent = 'ปิดการส่งคำสั่งจากกราฟ กรุณาใช้ร่างคำสั่งผ่าน Telegram และกดยืนยัน';
+  return;
 }
 // Mark price field as user-edited so quote refresh doesn't override it
 document.addEventListener('DOMContentLoaded',()=>{

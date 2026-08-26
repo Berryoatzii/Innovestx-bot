@@ -16,6 +16,9 @@ function resetEnv() {
     'INVX_SECRET',
     'INVX_PIN',
     'INVX_ACCOUNT',
+    'BROKER_GATEWAY_URL',
+    'BROKER_GATEWAY_TOKEN',
+    'BROKER_GATEWAY_ENVIRONMENT',
     'MAX_LIVE_ORDER_VALUE',
     'MAX_DAILY_APPROVED_NOTIONAL',
     'TELEGRAM_CHAT_ID',
@@ -109,6 +112,53 @@ test('approval engine is fail-closed by default', () => {
   const availability = approvalAvailability();
   assert.equal(availability.ready, false);
   assert.ok(availability.missing.includes('ADMIN_TOKEN'));
+});
+
+test('approval readiness uses the SDK gateway and never requires broker secrets in Node', () => {
+  Object.assign(process.env, {
+    LIVE_TRADING_ENABLED: 'true',
+    HUMAN_APPROVAL_LIVE_ENABLED: 'true',
+    ADMIN_TOKEN: 'admin-test-token',
+    EXECUTE_CONFIRMATION: 'execute-test-token',
+    ORDER_INTENT_GATE_SECRET: 'intent-test-secret',
+    BROKER_GATEWAY_URL: 'https://broker.example.test',
+    BROKER_GATEWAY_TOKEN: 'gateway-test-token',
+    BROKER_GATEWAY_ENVIRONMENT: 'prod',
+    MAX_LIVE_ORDER_VALUE: '1000',
+    MAX_DAILY_APPROVED_NOTIONAL: '1000',
+  });
+  clear('../netlify/lib/approval-executor');
+  const { approvalAvailability } = require('../netlify/lib/approval-executor');
+  const availability = approvalAvailability({ releaseManifest: {
+    uatOrderCycleComplete: true,
+    uatFaultMatrixComplete: true,
+    brokerPermissionConfirmed: true,
+    productionReadOnlyVerified: true,
+    zeroUnresolvedVerified: true,
+    strategyReleaseApproved: true,
+    privateWorkerEvidence: {
+      privateHost: true, gatewayLoopbackOnly: true, persistentJournal: true,
+      watchdogEnabled: true, secretsProtected: true, singleSessionFence: true,
+      reconciliationEnabled: true, alertsVerified: true, restartDrillPassed: true,
+      networkOutageDrillPassed: true, lastVerifiedAt: new Date().toISOString(),
+      deployedCommit: 'abc1234', auditedCommit: 'abc1234',
+    },
+    pilotCapitalEvidence: {
+      capital: 10000, price: 1.9, stopPrice: 1.8, boardLot: 100, tickSize: 0.01,
+      maxPositionWeight: 0.05, riskPerTradePct: 0.005, cashReserveWeight: 0.2,
+      feesVerified: true, protectionVerified: true,
+      costModel: {
+        commissionRate: 0.0015, setTradingFeeRate: 0.00005,
+        clearingFeeRate: 0.00001, regulatoryFeeRate: 0.00001,
+        vatRate: 0.07, slippageBpsPerSide: 10, minimumCommissionPerDay: 0,
+      },
+    },
+    deployedCommit: 'abc1234',
+    auditedCommit: 'abc1234',
+  } });
+  assert.equal(availability.ready, true);
+  assert.equal(availability.missing.includes('INVX_SECRET'), false);
+  assert.equal(availability.gatewayEnvironment, 'prod');
 });
 
 test('configured private chat can use operator commands without live approver identity', () => {

@@ -3,6 +3,7 @@ const SET_TRI_URL = 'https://www.set.or.th/en/market/index/tri/overview';
 
 function normalizeSymbol(symbol) {
   const value = String(symbol || '').toUpperCase().trim();
+  if (value === 'THB=X') return value;
   if (!/^[A-Z0-9.^_-]{1,30}$/.test(value)) throw new Error('INVALID_RESEARCH_SYMBOL');
   return value;
 }

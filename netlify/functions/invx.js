@@ -4,17 +4,22 @@
 const crypto = require('crypto');
 const { handler: engineHandler } = require('../lib/invx-engine');
 const { getIntent } = require('../lib/order-intent-store');
+const {
+  BrokerGatewayError,
+  gatewayConfigured,
+  gatewayRequest,
+} = require('../lib/broker-gateway-client');
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 const EXECUTE_CONFIRMATION = process.env.EXECUTE_CONFIRMATION || '';
 const ORDER_INTENT_GATE_SECRET = process.env.ORDER_INTENT_GATE_SECRET || '';
 const LIVE_TRADING_ENABLED = process.env.LIVE_TRADING_ENABLED === 'true';
-const HUMAN_APPROVAL_ONLY = process.env.HUMAN_APPROVAL_ONLY !== 'false';
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'null';
 const ALLOWED_DECISION_AUTHORITIES = new Set([
   'DETERMINISTIC_RULES_PLUS_HUMAN_APPROVAL',
   'HUMAN_OPERATOR_LIMIT_DRAFT_PLUS_RISK_APPROVAL',
 ]);
+const PRIVATE_READ_ACTIONS = new Set(['getData', 'ping', 'debug']);
 
 const BASE_HEADERS = {
   'Access-Control-Allow-Origin': ALLOWED_ORIGIN,
@@ -24,6 +29,7 @@ const BASE_HEADERS = {
     'x-execute-confirmation',
     'x-order-intent-id',
     'x-order-intent-signature',
+    'x-cancel-request-id',
   ].join(', '),
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Content-Type': 'application/json',
@@ -114,7 +120,7 @@ async function validateIntentBinding(event, intentId, suppliedSignature) {
   // Money-moving binding must see the exact latest state or fail closed.
   const intent = await getIntent(intentId, event, { requireStrong: true });
   if (!intent) throw new Error('ORDER_INTENT_NOT_FOUND');
-  if (intent.status !== 'APPROVING') throw new Error(`ORDER_INTENT_NOT_APPROVING:${intent.status}`);
+  if (intent.status !== 'SUBMITTING') throw new Error(`ORDER_INTENT_NOT_SUBMITTING:${intent.status}`);
   if (intent.portfolioBucket !== 'ACTIVE') throw new Error('ORDER_INTENT_BUCKET_NOT_ACTIVE');
   if (!ALLOWED_DECISION_AUTHORITIES.has(intent.decisionAuthority)) {
     throw new Error('ORDER_INTENT_AUTHORITY_INVALID');
@@ -137,6 +143,65 @@ async function validateIntentBinding(event, intentId, suppliedSignature) {
   return { intent, order, driftPct, orderStyle };
 }
 
+async function callBrokerGateway(event, action, intentId = '') {
+  if (!gatewayConfigured()) {
+    throw new BrokerGatewayError('BROKER_GATEWAY_NOT_CONFIGURED', { statusCode: 503 });
+  }
+  if (action === 'ping') {
+    const health = await gatewayRequest('/v1/health');
+    return { status: 'ok', ...health };
+  }
+  if (action === 'getData') {
+    const snapshot = await gatewayRequest('/v1/account-snapshot');
+    return {
+      environment: snapshot.environment,
+      portfolio: snapshot.portfolio || [],
+      orders: snapshot.orders || [],
+      cash: snapshot.cash ?? null,
+      cashVerified: snapshot.cashVerified === true,
+    };
+  }
+  if (action === 'debug') {
+    const snapshot = await gatewayRequest('/v1/account-snapshot');
+    return {
+      environment: snapshot.environment,
+      gateway: 'official-settrade-sdk-v2',
+      portfolioCount: Array.isArray(snapshot.portfolio) ? snapshot.portfolio.length : 0,
+      orderCount: Array.isArray(snapshot.orders) ? snapshot.orders.length : 0,
+      cashVerified: snapshot.cashVerified === true,
+    };
+  }
+  if (action === 'quote') {
+    const symbol = String(event.queryStringParameters?.sym || '').toUpperCase().trim();
+    if (!/^[A-Z0-9._-]{1,20}$/.test(symbol)) {
+      throw new BrokerGatewayError('INVALID_SYMBOL', { statusCode: 400 });
+    }
+    const payload = await gatewayRequest(`/v1/quotes/${encodeURIComponent(symbol)}`);
+    return payload.quote || payload;
+  }
+  if (action === 'order') {
+    return gatewayRequest('/v1/orders', {
+      method: 'POST',
+      requestId: intentId,
+      body: normalizeOrderBody(parseBody(event)),
+    });
+  }
+  if (action === 'cancel') {
+    const orderId = String(event.queryStringParameters?.id || '').trim();
+    const requestId = getHeader(event.headers, 'x-cancel-request-id');
+    if (!orderId) throw new BrokerGatewayError('MISSING_ORDER_ID', { statusCode: 400 });
+    if (!/^[A-Za-z0-9._:-]{8,128}$/.test(requestId)) {
+      throw new BrokerGatewayError('MISSING_OR_INVALID_CANCEL_REQUEST_ID', { statusCode: 400 });
+    }
+    return gatewayRequest(`/v1/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: 'POST',
+      requestId,
+      body: {},
+    });
+  }
+  throw new BrokerGatewayError('UNSUPPORTED_BROKER_GATEWAY_ACTION', { statusCode: 400 });
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 204, headers: BASE_HEADERS, body: '' };
@@ -146,15 +211,18 @@ exports.handler = async (event) => {
   const method = event.httpMethod || 'GET';
   const isOrder = action === 'order';
   const isCancel = action === 'cancel';
+  const isPrivateRead = PRIVATE_READ_ACTIONS.has(action);
+  const isGatewayMarketRead = action === 'quote';
+  let validatedIntentId = '';
 
   if ((isOrder || isCancel) && method !== 'POST') {
     return response(405, { error: 'Mutation endpoints require POST' });
   }
 
-  if (isOrder || isCancel) {
+  if (isOrder || isCancel || isPrivateRead) {
     if (!ADMIN_TOKEN) {
       return response(503, {
-        error: 'Trading mutation disabled: ADMIN_TOKEN is not configured',
+        error: 'Private broker access disabled: ADMIN_TOKEN is not configured',
         safeDefault: true,
       });
     }
@@ -162,7 +230,7 @@ exports.handler = async (event) => {
     if (!safeEqual(suppliedAdmin, ADMIN_TOKEN)) return response(401, { error: 'Unauthorized' });
   }
 
-  if (isOrder) {
+  if (isOrder || isCancel) {
     if (!LIVE_TRADING_ENABLED) {
       return response(423, { error: 'Live trading is locked', required: 'LIVE_TRADING_ENABLED=true' });
     }
@@ -173,19 +241,38 @@ exports.handler = async (event) => {
     if (!safeEqual(suppliedConfirmation, EXECUTE_CONFIRMATION)) {
       return response(401, { error: 'Missing or invalid execute confirmation' });
     }
+  }
 
-    if (HUMAN_APPROVAL_ONLY) {
-      if (!ORDER_INTENT_GATE_SECRET) return response(503, { error: 'Order intent gate is not configured' });
-      const intentId = getHeader(event.headers, 'x-order-intent-id');
-      const suppliedSignature = getHeader(event.headers, 'x-order-intent-signature');
-      if (!/^[a-f0-9]{16}$/i.test(String(intentId || ''))) {
-        return response(401, { error: 'Missing or invalid order intent ID' });
+  if (isOrder) {
+    // Signed human-approved intent is mandatory. No environment flag may
+    // downgrade this money-moving gate.
+    if (!ORDER_INTENT_GATE_SECRET) return response(503, { error: 'Order intent gate is not configured' });
+    const intentId = getHeader(event.headers, 'x-order-intent-id');
+    const suppliedSignature = getHeader(event.headers, 'x-order-intent-signature');
+    if (!/^[a-f0-9]{16}$/i.test(String(intentId || ''))) {
+      return response(401, { error: 'Missing or invalid order intent ID' });
+    }
+    try {
+      await validateIntentBinding(event, intentId, suppliedSignature);
+      validatedIntentId = intentId;
+    } catch (error) {
+      return response(401, { error: error.message });
+    }
+  }
+
+  if (isPrivateRead || isOrder || isCancel || isGatewayMarketRead) {
+    try {
+      const data = await callBrokerGateway(event, action, validatedIntentId);
+      return response(200, data);
+    } catch (error) {
+      if (error instanceof BrokerGatewayError) {
+        return response(error.statusCode || 502, {
+          error: error.message,
+          executionUncertain: error.executionUncertain === true,
+          safeDefault: true,
+        });
       }
-      try {
-        await validateIntentBinding(event, intentId, suppliedSignature);
-      } catch (error) {
-        return response(401, { error: error.message });
-      }
+      return response(502, { error: 'Broker gateway failed', safeDefault: true });
     }
   }
 
@@ -206,6 +293,7 @@ exports.handler = async (event) => {
 
 module.exports._test = {
   ALLOWED_DECISION_AUTHORITIES,
+  PRIVATE_READ_ACTIONS,
   safeEqual,
   expectedIntentSignature,
   signaturePayload,

@@ -25,13 +25,12 @@ With either live flag set to `false`, pressing Approve records the attempt but s
 Never commit these values:
 
 ```text
-INVX_KEY
-INVX_SECRET
-INVX_PIN
-INVX_ACCOUNT
 ADMIN_TOKEN
 EXECUTE_CONFIRMATION
 ORDER_INTENT_GATE_SECRET
+BROKER_GATEWAY_URL
+BROKER_GATEWAY_TOKEN
+BROKER_GATEWAY_ENVIRONMENT
 TELEGRAM_TOKEN
 TELEGRAM_CHAT_ID
 TELEGRAM_APPROVER_USER_ID
@@ -39,6 +38,10 @@ TELEGRAM_WEBHOOK_SECRET
 ```
 
 Use independent random values for `ADMIN_TOKEN`, `EXECUTE_CONFIRMATION`, `ORDER_INTENT_GATE_SECRET`, and `TELEGRAM_WEBHOOK_SECRET`.
+
+Broker credentials (`SETTRADE_APP_ID`, `SETTRADE_APP_SECRET`,
+`SETTRADE_ACCOUNT_NO`, `SETTRADE_PIN`) belong only in the private worker's
+`broker_gateway/.env`; never place them in Netlify or a browser.
 
 ## Proposal controls
 
@@ -62,12 +65,29 @@ Keep these at zero until shadow validation is accepted:
 MAX_LIVE_ORDER_VALUE=0
 MAX_DAILY_APPROVED_NOTIONAL=0
 MAX_DAILY_APPROVED_ORDERS=1
+OPERATIONAL_PILOT_MODE=false
 MAX_LIVE_POSITION_FRACTION=0.25
 MAX_PRICE_DRIFT_PCT=0.02
 MAX_SPREAD_PCT=0.03
 ```
 
-Before the limited live pilot, set small positive values for the two zero limits, then enable both:
+Before the one-order operational pilot, every operational release gate must pass.
+For the recommended outbound-worker topology also configure matching values on the
+control plane and private machine:
+
+```text
+EXECUTION_TOPOLOGY=PRIVATE_WORKER_QUEUE
+PRIVATE_WORKER_TOKEN=<independent random machine token>
+ORDER_INTENT_GATE_SECRET=<same HMAC secret on control plane and worker>
+AUDITED_COMMIT_REF=<exact commit reviewed for this release>
+```
+
+The broker API secret, account and PIN remain only on the private machine. The
+control plane never receives them and never tries to reach a loopback URL.
+Netlify supplies `COMMIT_REF` automatically. The release gate compares it with
+`AUDITED_COMMIT_REF`; do not try to embed a commit's own hash into that same commit.
+Set `OPERATIONAL_PILOT_MODE=true`, keep `MAX_DAILY_APPROVED_ORDERS=1`, set small
+positive values for the two zero limits, then enable both:
 
 ```text
 LIVE_TRADING_ENABLED=true
@@ -75,6 +95,10 @@ HUMAN_APPROVAL_LIVE_ENABLED=true
 ```
 
 Do not enable only one flag and assume the system is live; both are required.
+The operational-pilot lock is written with strong consistency before the broker
+request. After the first attempt it cannot reset itself, even if the response is
+rejected or uncertain. Continuous live use requires full strategy release evidence
+and `OPERATIONAL_PILOT_MODE=false`.
 
 ## Telegram webhook setup
 

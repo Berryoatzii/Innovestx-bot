@@ -199,8 +199,70 @@ test('shadow evidence gate requires both 20 days and 100 decisions', () => {
     duplicateIntentAttempts: 0,
     unauthorizedExecutionAttempts: 0,
     dataQualityFailures: 0,
+    shadowTradeEvents: index < 10 ? 1 : 0,
+    initialCapital: 100000,
+    equity: 100000 + (index * 200),
+    maxDrawdown: -0.03,
     setTriValue: 1000 + index,
   }));
-  const gate = evaluateShadowGate(reports, { minimumDays: 20, minimumEvents: 100 });
+  const gate = evaluateShadowGate(reports, {
+    minimumDays: 20,
+    minimumEvents: 100,
+    minimumTradeEvents: 10,
+    maximumDrawdown: -0.10,
+  });
   assert.equal(gate.passed, true);
+});
+
+test('shadow evidence gate fails on data errors, no trades, loss or benchmark underperformance', () => {
+  const { evaluateShadowGate } = require('../netlify/lib/shadow-performance-store');
+  const reports = Array.from({ length: 20 }, (_, index) => ({
+    date: `2026-09-${String(index + 1).padStart(2, '0')}`,
+    marketOpenDay: true,
+    decisionEvents: 5,
+    duplicateIntentAttempts: 0,
+    unauthorizedExecutionAttempts: 0,
+    dataQualityFailures: index === 4 ? 1 : 0,
+    shadowTradeEvents: 0,
+    initialCapital: 100000,
+    equity: 100000 - (index * 100),
+    maxDrawdown: -0.12,
+    setTriValue: 1000 + (index * 2),
+  }));
+  const gate = evaluateShadowGate(reports, {
+    minimumDays: 20,
+    minimumEvents: 100,
+    minimumTradeEvents: 10,
+    maximumDrawdown: -0.10,
+  });
+  assert.equal(gate.passed, false);
+  assert.equal(gate.checks.zeroDataQualityFailures, false);
+  assert.equal(gate.checks.minimumTradeEvents, false);
+  assert.equal(gate.checks.positiveAfterCostReturn, false);
+  assert.equal(gate.checks.positiveBenchmarkExcess, false);
+  assert.equal(gate.checks.drawdownWithinLimit, false);
+});
+
+test('technical breakout compares raw close with raw highs instead of mixing adjusted dividend prices', () => {
+  const { evaluateActiveStrategy } = require('../netlify/lib/deterministic-strategy');
+  const candles = Array.from({ length: 220 }, (_, index) => {
+    const close = 10 + Math.sin(index / 3) * 0.2 + index * 0.002;
+    return {
+      time: 1700000000 + index * 86400,
+      date: new Date((1700000000 + index * 86400) * 1000).toISOString().slice(0, 10),
+      open: close - 0.02,
+      high: close + 0.05,
+      low: close - 0.05,
+      close,
+      adjustedClose: close * 0.8,
+      volume: 1000000,
+    };
+  });
+  const result = evaluateActiveStrategy(candles, {
+    minimumBars: 220,
+    maxAgeDays: 99999,
+    now: new Date((candles.at(-1).time + 86400) * 1000),
+    benchmarkRegime: { tradable: true },
+  });
+  assert.equal(result.features.close, candles.at(-1).close);
 });

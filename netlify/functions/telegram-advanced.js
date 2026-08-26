@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const { listIntents } = require('../lib/order-intent-store');
 const {
   approvalAvailability,
-  executeApprovedIntent,
+  approveIntent,
   rejectIntent,
 } = require('../lib/approval-executor');
 const {
@@ -270,7 +270,7 @@ async function handleApprovalCallback(callback, update, event) {
 
   await answerCallback(callback.id, 'รับคำขออนุมัติ กำลังตรวจราคา พอร์ต และความเสี่ยงซ้ำ...');
   try {
-    const result = await executeApprovedIntent(intentId, actor, event);
+    const result = await approveIntent(intentId, actor, event);
     if (result.status === 'LIVE_LOCKED') {
       await tgSend([
         `🔒 รับการอนุมัติแล้ว [${intentId}]`,
@@ -280,6 +280,16 @@ async function handleApprovalCallback(callback, update, event) {
       return true;
     }
     if (!result.executed) {
+      if (result.queued) {
+        await tgSend([
+          `✅ อนุมัติและเข้าคิวแล้ว [${intentId}]`,
+          `${result.intent.side} ${result.intent.symbol} ${result.intent.quantity} หุ้น`,
+          `ราคา Limit: ${Number(result.intent.proposedPrice).toFixed(2)}`,
+          'Private Worker จะตรวจราคา เงินสด พอร์ต ออเดอร์ซ้ำ และความเสี่ยงอีกครั้งก่อนส่ง',
+          'สถานะนี้ยังไม่ใช่หลักฐานว่าโบรกเกอร์รับออเดอร์แล้ว',
+        ].join('\n'));
+        return true;
+      }
       await tgSend([
         `🛑 ออเดอร์ถูกบล็อก [${intentId}]`,
         `สถานะ: ${result.status}`,

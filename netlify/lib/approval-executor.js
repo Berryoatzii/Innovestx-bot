@@ -2,6 +2,15 @@ const crypto = require('crypto');
 const { handler: secureInvxHandler } = require('../functions/invx');
 const { fetchRawOrders } = require('./settrade-read');
 const { isContinuousSession } = require('./market-calendar');
+const { normalizeBrokerOrderState, isBrokerOrderTerminal } = require('./broker-order-status');
+const { reserveOperationalPilotAttempt } = require('./operational-pilot-lock');
+const { queueApprovedIntent } = require('./private-worker-queue');
+const { loadReleaseConfig } = require('./release-config');
+const releaseConfig = loadReleaseConfig();
+const {
+  evaluateOperationalPilotEvidence,
+  evaluateReleaseEvidence,
+} = require('./real-money-release');
 const {
   getIntent,
   transitionIntent,
@@ -27,33 +36,72 @@ function boolEnv(name) {
   return process.env[name] === 'true';
 }
 
-function approvalAvailability() {
-  const required = [
+function approvalAvailability(options = {}) {
+  const executionTopology = String(process.env.EXECUTION_TOPOLOGY || 'DIRECT_GATEWAY').toUpperCase();
+  const directRequired = [
     'ADMIN_TOKEN',
     'EXECUTE_CONFIRMATION',
     'ORDER_INTENT_GATE_SECRET',
-    'INVX_KEY',
-    'INVX_SECRET',
-    'INVX_PIN',
-    'INVX_ACCOUNT',
+    'BROKER_GATEWAY_URL',
+    'BROKER_GATEWAY_TOKEN',
+    'BROKER_GATEWAY_ENVIRONMENT',
   ];
+  const workerRequired = [
+    'PRIVATE_WORKER_TOKEN',
+    'ORDER_INTENT_GATE_SECRET',
+  ];
+  const required = executionTopology === 'PRIVATE_WORKER_QUEUE' ? workerRequired : directRequired;
   const missing = required.filter((name) => !process.env[name]);
   const maxOrderValue = numberEnv('MAX_LIVE_ORDER_VALUE', 0);
   const maxDailyNotional = numberEnv('MAX_DAILY_APPROVED_NOTIONAL', 0);
+  const gatewayEnvironment = String(process.env.BROKER_GATEWAY_ENVIRONMENT || '').toLowerCase();
+  const gatewayUrl = String(process.env.BROKER_GATEWAY_URL || '');
+  const cloudRuntime = process.env.NETLIFY === 'true' || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+  const localGateway = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(?:\/|$)/i.test(gatewayUrl);
+  const gatewayTopologyAllowed = !(cloudRuntime && localGateway);
+  const productionGateway = executionTopology === 'PRIVATE_WORKER_QUEUE' || gatewayEnvironment === 'prod';
+  const operationalPilotMode = boolEnv('OPERATIONAL_PILOT_MODE');
+  const manifest = options.releaseManifest || releaseConfig;
+  const releaseEvidence = operationalPilotMode
+    ? evaluateOperationalPilotEvidence(manifest)
+    : evaluateReleaseEvidence(manifest);
 
   return {
     ready:
       boolEnv('LIVE_TRADING_ENABLED') &&
       boolEnv('HUMAN_APPROVAL_LIVE_ENABLED') &&
       missing.length === 0 &&
+      productionGateway &&
+      gatewayTopologyAllowed &&
       maxOrderValue > 0 &&
-      maxDailyNotional > 0,
+      maxDailyNotional > 0 &&
+      releaseEvidence.passed,
     liveTradingEnabled: boolEnv('LIVE_TRADING_ENABLED'),
     humanApprovalEnabled: boolEnv('HUMAN_APPROVAL_LIVE_ENABLED'),
     missing,
+    gatewayEnvironment,
+    productionGateway,
+    gatewayTopologyAllowed,
     maxOrderValue,
     maxDailyNotional,
+    operationalPilotMode,
+    executionTopology,
+    releaseEvidencePassed: releaseEvidence.passed,
+    releaseBlockers: releaseEvidence.blockers,
   };
+}
+
+async function approveIntent(intentId, approver, event) {
+  const availability = approvalAvailability();
+  if (!availability.ready) {
+    const intent = await getIntent(intentId, event);
+    return { executed: false, status: 'LIVE_LOCKED', availability, intent };
+  }
+  if (availability.executionTopology === 'PRIVATE_WORKER_QUEUE') {
+    const intent = await queueApprovedIntent(intentId, approver, event);
+    return { executed: false, queued: true, status: intent.status, intent };
+  }
+  return executeApprovedIntent(intentId, approver, event);
 }
 
 function bkkClock(date = new Date()) {
@@ -101,8 +149,10 @@ function intentGateSignature(intentId, orderBody = {}) {
 
 async function callInvx({ action, method = 'GET', body = null, query = {}, intentId = null, event = null }) {
   const headers = {};
-  if (action === 'order') {
+  if (['getData', 'ping', 'debug', 'order', 'cancel'].includes(action)) {
     headers['x-admin-token'] = process.env.ADMIN_TOKEN || '';
+  }
+  if (action === 'order') {
     headers['x-execute-confirmation'] = process.env.EXECUTE_CONFIRMATION || '';
     headers['x-order-intent-id'] = intentId || '';
     headers['x-order-intent-signature'] = intentGateSignature(intentId, body || {});
@@ -130,12 +180,10 @@ function normalizeOrderSide(side) {
 }
 
 function hasDuplicateOpenOrder(orders, intent) {
-  const terminal = ['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED'];
   return (Array.isArray(orders) ? orders : []).some((order) => {
-    const status = String(order.status || '').toUpperCase();
     return String(order.symbol || order.sym || '').toUpperCase() === intent.symbol &&
       normalizeOrderSide(order.side) === intent.side &&
-      !terminal.some((word) => status.includes(word));
+      !isBrokerOrderTerminal(order);
   });
 }
 
@@ -228,7 +276,9 @@ async function preflightIntent(intent, event) {
     if (postTradeWeight > maxPositionWeight) throw new Error(`ACTIVE_POSITION_WEIGHT_LIMIT:${postTradeWeight.toFixed(4)}`);
   }
 
-  const dailyStats = await getDailyExecutionStats(event, new Date());
+  const dailyStats = await getDailyExecutionStats(event, new Date(), {
+    excludeIntentId: intent.id,
+  });
   const maxDailyOrders = Math.max(1, Math.floor(numberEnv('MAX_DAILY_APPROVED_ORDERS', 1)));
   const maxDailyNotional = numberEnv('MAX_DAILY_APPROVED_NOTIONAL', 0);
   if (dailyStats.count >= maxDailyOrders) throw new Error('DAILY_ORDER_COUNT_LIMIT');
@@ -240,12 +290,7 @@ async function preflightIntent(intent, event) {
 }
 
 function brokerStatusToIntentStatus(status) {
-  const value = String(status || '').toUpperCase();
-  if (value.includes('PART')) return 'PARTIALLY_FILLED';
-  if (value.includes('FILL') || value.includes('MATCH')) return 'FILLED';
-  if (value.includes('REJECT')) return 'REJECTED_BY_BROKER';
-  if (value.includes('CANCEL')) return 'CANCELLED';
-  return 'ACKNOWLEDGED';
+  return normalizeBrokerOrderState(status);
 }
 
 async function executeApprovedIntent(intentId, approver, event) {
@@ -272,6 +317,9 @@ async function executeApprovedIntent(intentId, approver, event) {
   let preflight;
   try {
     preflight = await preflightIntent(approving, event);
+    if (boolEnv('OPERATIONAL_PILOT_MODE')) {
+      await reserveOperationalPilotAttempt(approving, event);
+    }
   } catch (error) {
     const failed = await transitionIntent(intentId, 'APPROVING', 'FAILED_PRECHECK', {
       lastError: error.message,
@@ -286,6 +334,22 @@ async function executeApprovedIntent(intentId, approver, event) {
     price: preflight.market.executionPrice,
   };
 
+  const attemptedAt = new Date().toISOString();
+  const submitting = await transitionIntent(intentId, 'APPROVING', 'SUBMITTING', {
+    broker: {
+      attemptedAt,
+      submittedAt: attemptedAt,
+      request: orderBody,
+      submittedPrice: preflight.market.executionPrice,
+      submittedValue: preflight.submittedValue,
+      orderStyle: preflight.market.orderStyle,
+    },
+  }, {
+    event,
+    actor: 'execution-engine',
+    note: 'Durable attempt marker written before broker request; never auto-resubmit',
+  });
+
   let orderResponse;
   try {
     orderResponse = await callInvx({
@@ -296,38 +360,35 @@ async function executeApprovedIntent(intentId, approver, event) {
       event,
     });
   } catch (error) {
-    const uncertain = await transitionIntent(intentId, 'APPROVING', 'EXECUTION_UNCERTAIN', {
+    const uncertain = await transitionIntent(intentId, 'SUBMITTING', 'EXECUTION_UNCERTAIN', {
       lastError: error.message,
-      broker: { submittedAt: new Date().toISOString(), request: orderBody },
+      broker: submitting.broker,
     }, { event, actor: 'execution-engine', note: 'Transport failure after order attempt' });
     return { executed: false, status: uncertain.status, error: error.message, intent: uncertain };
   }
 
   const orderId = orderResponse.payload.orderId || orderResponse.payload.order_id || orderResponse.payload.orderNo ||
-    orderResponse.payload.data?.orderId || null;
+    orderResponse.payload.data?.orderId || orderResponse.payload.data?.order_id ||
+    orderResponse.payload.data?.orderNo || null;
   const success = orderResponse.statusCode >= 200 && orderResponse.statusCode < 300 &&
-    (orderResponse.payload._success === true || Boolean(orderId));
+    Boolean(orderId) && orderResponse.payload._success !== false;
 
   if (!success) {
-    const uncertain = await transitionIntent(intentId, 'APPROVING', 'EXECUTION_UNCERTAIN', {
+    const uncertain = await transitionIntent(intentId, 'SUBMITTING', 'EXECUTION_UNCERTAIN', {
       lastError: orderResponse.payload._error_msg || `BROKER_HTTP_${orderResponse.statusCode}`,
       broker: {
-        submittedAt: new Date().toISOString(),
-        request: orderBody,
+        ...submitting.broker,
         responseStatus: orderResponse.statusCode,
       },
     }, { event, actor: 'execution-engine', note: 'Broker response did not prove rejection or acceptance' });
     return { executed: false, status: uncertain.status, error: uncertain.lastError, intent: uncertain };
   }
 
-  const submitted = await transitionIntent(intentId, 'APPROVING', 'SUBMITTED', {
+  const submitted = await transitionIntent(intentId, 'SUBMITTING', 'SUBMITTED', {
     broker: {
+      ...submitting.broker,
       orderId,
-      submittedAt: new Date().toISOString(),
-      submittedPrice: preflight.market.executionPrice,
-      submittedValue: preflight.submittedValue,
       responseStatus: orderResponse.statusCode,
-      orderStyle: preflight.market.orderStyle,
     },
   }, { event, actor: 'execution-engine' });
 
@@ -349,7 +410,7 @@ async function executeApprovedIntent(intentId, approver, event) {
     return { executed: true, status: pending.status, intent: pending };
   }
 
-  const nextStatus = brokerStatusToIntentStatus(matched.status);
+  const nextStatus = normalizeBrokerOrderState(matched);
   const reconciled = await transitionIntent(intentId, 'SUBMITTED', nextStatus, {
     broker: {
       ...submitted.broker,
@@ -380,6 +441,7 @@ module.exports = {
   portfolioMarketValue,
   preflightIntent,
   executeApprovedIntent,
+  approveIntent,
   rejectIntent,
   _test: {
     bkkClock,

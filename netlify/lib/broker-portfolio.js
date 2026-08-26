@@ -3,7 +3,7 @@ const { handler: invxHandler } = require('../functions/invx');
 async function fetchBrokerPortfolio(event) {
   const response = await invxHandler({
     httpMethod: 'GET',
-    headers: {},
+    headers: { 'x-admin-token': process.env.ADMIN_TOKEN || '' },
     queryStringParameters: { action: 'getData' },
     body: '',
     requestContext: event?.requestContext,

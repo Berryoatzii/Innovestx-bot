@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "SET50_H2_2026_RESEARCH_ONLY",
+  "validFrom": "2026-07-01",
+  "validThrough": "2026-12-31",
+  "source": "Stock Exchange of Thailand",
+  "sourceUrl": "https://media.set.or.th/set/Documents/2026/Jun/SET50-SET100-H2-2026.pdf",
+  "usage": "Research universe only. Membership never authorizes an order.",
+  "symbols": [
+    "ADVANC", "AOT", "AWC", "BANPU", "BBL", "BCP", "BDMS", "BEM", "BH", "BJC",
+    "CCET", "COM7", "CPALL", "CPF", "CPN", "CRC", "DELTA", "EGCO", "GPSC", "GULF",
+    "HMPRO", "IVL", "KBANK", "KKP", "KTB", "KTC", "LH", "MINT", "MRDIYT", "MTC",
+    "OR", "OSP", "PTT", "PTTEP", "PTTGC", "RATCH", "SCB", "SCC", "SCGP", "TCAP",
+    "TFG", "THAI", "TIDLOR", "TISCO", "TLI", "TOP", "TRUE", "TTB", "TU", "WHA"
+  ]
+}

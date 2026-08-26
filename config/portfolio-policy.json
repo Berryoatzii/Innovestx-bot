@@ -1,5 +1,52 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
+  "dailyDecisionProcess": {
+    "analysisBeforeAnyOrder": true,
+    "forcedDailyTrading": false,
+    "analysisPanel": {
+      "PUBLIC_EQUITY_INVESTING": "business quality, industry structure, catalysts, risks, and investment thesis",
+      "FINANCIAL_SUMMARIZER_PRO": "financial statements, revenue segments, cash flow, debt, margins, and earnings quality",
+      "INVESTMENT_BANKING": "DCF, trading comparables, valuation ranges, scenario sensitivity, and margin of safety only",
+      "ALPACA": "US market status, current quote, bid/ask, liquidity, historical prices, and corporate actions",
+      "SP_GLOBAL": "independent company, industry, estimates, credit, and market context when a callable source is available",
+      "AMAZING_PENSIONS": "long-term household allocation and retirement suitability only; never treat sample values as user data"
+    },
+    "panelDecisionRules": [
+      "SEPARATE_FACTS_FROM_INFERENCES",
+      "REQUIRE_SOURCE_AND_TIMESTAMP",
+      "RECONCILE_CONFLICTING_DATA_BEFORE_PROPOSAL",
+      "NO_ORDER_PROPOSAL_WHEN_MATERIAL_DATA_IS_MISSING_OR_STALE",
+      "DO_NOT_USE_INVESTMENT_BANKING_OUTPUT_AS_A_STANDALONE_PUBLIC_EQUITY_RECOMMENDATION"
+    ],
+    "requiredBriefSections": [
+      "MARKET_REGIME",
+      "MACRO_AND_EVENT_RISK",
+      "CURRENT_PORTFOLIO_RISK",
+      "SHORT_TERM_WATCHLIST",
+      "LONG_TERM_WATCHLIST",
+      "HOLD_REDUCE_EXIT_REVIEW",
+      "ENTRY_EXIT_PRICE_ZONES",
+      "NO_TRADE_CONDITIONS"
+    ],
+    "orderProposalMustInclude": [
+      "POSITION_CLASS_SHORT_OR_LONG",
+      "THESIS",
+      "BUY_OR_SELL_REASON",
+      "TIME_HORIZON",
+      "CURRENT_MARKET_PRICE",
+      "PROPOSED_LIMIT_PRICE",
+      "ENTRY_ZONE",
+      "INVALIDATION_OR_STOP",
+      "TARGET_OR_EXIT_LOGIC",
+      "POSITION_SIZE",
+      "MAXIMUM_LOSS_BEFORE_FEES",
+      "FEES_AND_SLIPPAGE",
+      "PORTFOLIO_IMPACT",
+      "DATA_SOURCES",
+      "DATA_TIMESTAMP",
+      "HUMAN_APPROVAL"
+    ]
+  },
   "targets": {
     "CORE": 0.60,
     "ACTIVE": 0.20,
@@ -24,6 +71,25 @@
     "sellAuthority": "THESIS_BREAK_MANUAL_REVIEW_ONLY",
     "strategy": "QUALITY_DIVIDEND_VALUE_V1",
     "minimumHoldingIntentYears": 5,
+    "entryRules": {
+      "buyAtCurrentPriceImmediately": false,
+      "requiresBusinessQualityReview": true,
+      "requiresFinancialStatementReview": true,
+      "requiresBalanceSheetAndCashFlowReview": true,
+      "requiresGovernanceReview": true,
+      "requiresSectorAndMacroReview": true,
+      "requiresValuationRange": true,
+      "requiresMarginOfSafety": true,
+      "requiresStagedEntryPlan": true
+    },
+    "exitRules": {
+      "sellAtCurrentPriceImmediately": false,
+      "requiresThesisBreakOrPortfolioReason": true,
+      "requiresFundamentalAndValuationRefresh": true,
+      "requiresLiquidityAndTaxCostReview": true,
+      "requiresExitZoneOrStagedReduction": true,
+      "panicSellingForbidden": true
+    },
     "averaging": {
       "automaticOnPriceDecline": false,
       "maximumAdditionalTranches": 2,
@@ -37,7 +103,17 @@
     "maxPositions": 4,
     "riskPerTradePct": 0.005,
     "strategy": "MOMENTUM_BREAKOUT_V1",
-    "forcedDailyTrading": false
+    "forcedDailyTrading": false,
+    "minimumSignalClass": "A",
+    "requiresMarketRegimeAlignment": true,
+    "requiresLiquidityAndSpreadCheck": true,
+    "requiresEventAndNewsRiskCheck": true,
+    "requiresEntryTrigger": true,
+    "requiresPredefinedInvalidation": true,
+    "requiresRewardToRiskAfterCosts": true,
+    "minimumRewardToRiskAfterCosts": 2.0,
+    "chasingExtendedPriceForbidden": true,
+    "noSignalMeansNoTrade": true
   },
   "cash": {
     "minimumTargetWeight": 0.20,
@@ -50,6 +126,10 @@
     "minimumBars": 220,
     "minimumShadowTradingDays": 20,
     "minimumDecisionEvents": 100,
+    "minimumShadowTradeEvents": 10,
+    "maximumShadowDrawdown": -0.10,
+    "minimumAfterCostReturn": 0.0,
+    "minimumBenchmarkExcessReturn": 0.0,
     "benchmarkPrimary": "SET_TRI",
     "benchmarkFallback": "SET_INDEX",
     "cashAnnualRate": 0.0

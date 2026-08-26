@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "name": "DIVERSIFIED_DR_PILOT_RESEARCH_2026",
+  "authority": "RESEARCH_ONLY_NO_ORDERS",
+  "validFrom": "2026-08-06",
+  "validThrough": "2026-12-31",
+  "source": "Stock Exchange of Thailand DR market data and product profiles",
+  "sourceUrl": "https://www.set.or.th/en/market/product/dr/marketdata?tradeDateType=C",
+  "boardLot": 1,
+  "maxPositionWeight": 0.05,
+  "usage": "Research only. Inclusion never authorizes an order.",
+  "instruments": [
+    {
+      "symbol": "SP50001",
+      "exposure": "INDEX_ETF",
+      "underlying": "HANG SENG S&P 500 INDEX ETF",
+      "benchmark": "SPY",
+      "session": "DAY_ONLY",
+      "officialUrl": "https://www.set.or.th/en/market/product/dr/quote/SP50001/price"
+    },
+    {
+      "symbol": "NDX01",
+      "exposure": "INDEX_ETF",
+      "underlying": "CAM NASDAQ 100 ETF",
+      "benchmark": "QQQ",
+      "session": "DAY_ONLY",
+      "officialUrl": "https://www.set.or.th/en/market/product/dr/quote/NDX01/price"
+    },
+    {
+      "symbol": "INDIA01",
+      "exposure": "INDEX_ETF",
+      "underlying": "CHINAAMC MSCI INDIA ETF",
+      "benchmark": "INDA",
+      "session": "DAY_ONLY",
+      "officialUrl": "https://www.set.or.th/en/market/product/dr/quote/INDIA01/price"
+    },
+    {
+      "symbol": "CN01",
+      "exposure": "INDEX_ETF",
+      "underlying": "CAM CSI300 ETF",
+      "benchmark": "ASHR",
+      "session": "DAY_ONLY",
+      "officialUrl": "https://www.set.or.th/en/market/product/dr/quote/CN01/price"
+    },
+    {
+      "symbol": "BONDUS01",
+      "exposure": "BOND_ETF",
+      "underlying": "U.S. BOND ETF",
+      "benchmark": "AGG",
+      "session": "DAY_ONLY",
+      "officialUrl": "https://www.set.or.th/en/market/product/dr/quote/BONDUS01/price"
+    },
+    {
+      "symbol": "GOLDUS03",
+      "exposure": "GOLD_ETF",
+      "underlying": "SPDR GOLD SHARES ETF",
+      "benchmark": "GLD",
+      "session": "DAY_AND_NIGHT",
+      "officialUrl": "https://www.set.or.th/en/market/product/dr/quote/GOLDUS03/price"
+    }
+  ]
+}

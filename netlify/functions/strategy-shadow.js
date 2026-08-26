@@ -123,6 +123,8 @@ async function runStrategyShadow(event = {}, options = {}) {
   const evaluations = [];
   const dataFailures = [];
   const priceMap = {};
+  const executionPriceMap = {};
+  const volumeMap = {};
 
   for (const symbol of activeSymbols) {
     try {
@@ -130,6 +132,9 @@ async function runStrategyShadow(event = {}, options = {}) {
       const currentPrice = latestPrice(history);
       if (currentPrice <= 0) throw new Error('LATEST_PRICE_INVALID');
       priceMap[symbol] = currentPrice;
+      const latestCandle = history.candles[history.candles.length - 1] || {};
+      executionPriceMap[symbol] = Number(latestCandle.open || 0);
+      volumeMap[symbol] = Number(latestCandle.volume || 0);
       const corporate = corporateActionGate({
         symbol,
         date: researchWindow.isoDate,
@@ -172,6 +177,8 @@ async function runStrategyShadow(event = {}, options = {}) {
   const applied = applySignals(shadowState, evaluations, {
     date: researchWindow.isoDate,
     priceMap,
+    executionPriceMap,
+    volumeMap,
     maxPositionWeight: policy.active.maxPositionWeight,
     maxPositions: policy.active.maxPositions,
     boardLot: Number(process.env.PROPOSAL_BOARD_LOT || 100),
@@ -192,6 +199,7 @@ async function runStrategyShadow(event = {}, options = {}) {
     policyVersion: policy.schemaVersion,
     policySource,
     strategyVersion: savedState.strategyVersion,
+    initialCapital: savedState.initialCapital,
     equity: savedState.equity,
     cash: savedState.cash,
     peakEquity: savedState.peakEquity,
@@ -222,6 +230,10 @@ async function runStrategyShadow(event = {}, options = {}) {
   const gate = evaluateShadowGate(reports, {
     minimumDays: policy.research.minimumShadowTradingDays,
     minimumEvents: policy.research.minimumDecisionEvents,
+    minimumTradeEvents: policy.research.minimumShadowTradeEvents,
+    maximumDrawdown: policy.research.maximumShadowDrawdown,
+    minimumAfterCostReturn: policy.research.minimumAfterCostReturn,
+    minimumExcessReturn: policy.research.minimumBenchmarkExcessReturn,
   });
 
   if (options.sendTelegram !== false) await postTelegram(buildReportSummary(report, gate));

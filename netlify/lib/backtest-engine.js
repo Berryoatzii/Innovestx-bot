@@ -1,5 +1,6 @@
 const { evaluateActiveStrategy, evaluateBenchmarkRegime } = require('./deterministic-strategy');
-const { loadCostModel, transactionCost } = require('./cost-model');
+const { loadCostModel } = require('./cost-model');
+const { simulateDailyExecution } = require('./execution-realism');
 
 function annualizedReturn(startValue, endValue, tradingDays) {
   if (startValue <= 0 || endValue <= 0 || tradingDays <= 0) return 0;
@@ -33,8 +34,19 @@ function backtestActiveStrategy(stockCandles, benchmarkCandles, options = {}) {
   const maxPositionWeight = Number(options.maxPositionWeight || 0.10);
   const boardLot = Math.max(1, Math.floor(Number(options.boardLot || 100)));
   const costModel = options.costModel || loadCostModel();
+  const maxParticipationRate = Number(options.maxParticipationRate ?? 0.01);
+  const impactBpsAtMaxParticipation = Number(options.impactBpsAtMaxParticipation ?? 25);
+  const signalEvaluator = options.signalEvaluator || evaluateActiveStrategy;
+  const benchmarkEvaluator = options.benchmarkEvaluator || evaluateBenchmarkRegime;
   const warmupBars = Math.max(220, Number(options.warmupBars || 220));
   const alignedBenchmark = alignBenchmark(stockCandles, benchmarkCandles);
+  const requestedStartIndex = options.evaluationStartDate
+    ? stockCandles.findIndex((candle) => String(candle.date || '') >= String(options.evaluationStartDate))
+    : warmupBars;
+  const evaluationStartIndex = Math.max(
+    warmupBars,
+    requestedStartIndex >= 0 ? requestedStartIndex : stockCandles.length - 1
+  );
 
   let cash = initialCapital;
   let quantity = 0;
@@ -44,16 +56,18 @@ function backtestActiveStrategy(stockCandles, benchmarkCandles, options = {}) {
   const trades = [];
   const equityCurve = [];
   const decisionLog = [];
+  let liquidityRejectedOrders = 0;
+  let executionRejectedOrders = 0;
 
-  for (let index = warmupBars; index < stockCandles.length - 1; index += 1) {
+  for (let index = evaluationStartIndex; index < stockCandles.length - 1; index += 1) {
     const history = stockCandles.slice(0, index + 1);
     const benchmarkHistory = alignedBenchmark.slice(0, index + 1).filter(Boolean);
-    const benchmarkRegime = evaluateBenchmarkRegime(benchmarkHistory, {
+    const benchmarkRegime = benchmarkEvaluator(benchmarkHistory, {
       minimumBars: 220,
       maxAgeDays: 99999,
       now: new Date((stockCandles[index].time + 86400) * 1000),
     });
-    const signal = evaluateActiveStrategy(history, {
+    const signal = signalEvaluator(history, {
       minimumBars: 220,
       maxAgeDays: 99999,
       now: new Date((stockCandles[index].time + 86400) * 1000),
@@ -63,36 +77,51 @@ function backtestActiveStrategy(stockCandles, benchmarkCandles, options = {}) {
     const next = stockCandles[index + 1];
     const markPrice = stockCandles[index].close;
 
-    decisionLog.push({
+    const decision = {
       date: stockCandles[index].date,
       action: signal.action,
       reasonCodes: signal.reasonCodes,
       close: markPrice,
       positionQty: quantity,
-    });
+    };
+    decisionLog.push(decision);
 
     if (quantity === 0 && signal.action === 'BUY_CANDIDATE') {
       const executionPrice = Number(next.open || next.close);
       const maxNotional = Math.min(cash, initialCapital * maxPositionWeight);
       const proposedQty = Math.floor((maxNotional / executionPrice) / boardLot) * boardLot;
       if (proposedQty > 0) {
-        const notional = proposedQty * executionPrice;
-        const costs = transactionCost(notional, costModel);
-        if (notional + costs.total <= cash) {
-          cash -= notional + costs.total;
+        const execution = simulateDailyExecution({
+          side: 'BUY',
+          requestedQuantity: proposedQty,
+          referencePrice: executionPrice,
+          dailyVolume: next.volume,
+          boardLot,
+          maxParticipationRate,
+          impactBpsAtMaxParticipation,
+          costModel,
+        });
+        decision.executionReason = execution.reason;
+        if (!execution.filled) {
+          executionRejectedOrders += 1;
+          if (execution.reason === 'LIQUIDITY_LIMIT') liquidityRejectedOrders += 1;
+        } else if (execution.notional + execution.costs.total <= cash) {
+          cash -= execution.notional + execution.costs.total;
           quantity = proposedQty;
-          entryPrice = executionPrice;
+          entryPrice = execution.price;
           entryDate = next.date;
-          totalTurnover += notional;
+          totalTurnover += execution.notional;
           trades.push({
             symbol: options.symbol || null,
             side: 'BUY',
             signalDate: stockCandles[index].date,
             executionDate: next.date,
-            price: executionPrice,
+            price: execution.price,
             quantity: proposedQty,
-            notional,
-            costs: costs.total,
+            notional: execution.notional,
+            costs: execution.costs.total,
+            marketImpact: execution.costs.marketImpact,
+            participationRate: execution.participationRate,
             ruleVersion: signal.ruleVersion,
             reasonCodes: signal.reasonCodes,
           });
@@ -100,9 +129,25 @@ function backtestActiveStrategy(stockCandles, benchmarkCandles, options = {}) {
       }
     } else if (quantity > 0 && signal.action === 'EXIT_REVIEW') {
       const executionPrice = Number(next.open || next.close);
-      const notional = quantity * executionPrice;
-      const costs = transactionCost(notional, costModel);
-      const grossPnl = (executionPrice - entryPrice) * quantity;
+      const execution = simulateDailyExecution({
+        side: 'SELL',
+        requestedQuantity: quantity,
+        referencePrice: executionPrice,
+        dailyVolume: next.volume,
+        boardLot,
+        maxParticipationRate,
+        impactBpsAtMaxParticipation,
+        costModel,
+      });
+      decision.executionReason = execution.reason;
+      if (!execution.filled) {
+        executionRejectedOrders += 1;
+        if (execution.reason === 'LIQUIDITY_LIMIT') liquidityRejectedOrders += 1;
+        continue;
+      }
+      const notional = execution.notional;
+      const costs = execution.costs;
+      const grossPnl = (execution.price - entryPrice) * quantity;
       const matchingBuy = [...trades].reverse().find((trade) => trade.side === 'BUY' && !trade.closed);
       const entryCosts = matchingBuy ? matchingBuy.costs : 0;
       const netPnl = grossPnl - entryCosts - costs.total;
@@ -113,10 +158,12 @@ function backtestActiveStrategy(stockCandles, benchmarkCandles, options = {}) {
         side: 'SELL',
         signalDate: stockCandles[index].date,
         executionDate: next.date,
-        price: executionPrice,
+        price: execution.price,
         quantity,
         notional,
         costs: costs.total,
+        marketImpact: costs.marketImpact,
+        participationRate: execution.participationRate,
         grossPnl,
         netPnl,
         entryDate,
@@ -141,33 +188,43 @@ function backtestActiveStrategy(stockCandles, benchmarkCandles, options = {}) {
 
   const last = stockCandles[stockCandles.length - 1];
   if (quantity > 0) {
-    const notional = quantity * last.close;
-    const costs = transactionCost(notional, costModel);
-    const grossPnl = (last.close - entryPrice) * quantity;
-    const matchingBuy = [...trades].reverse().find((trade) => trade.side === 'BUY' && !trade.closed);
-    const entryCosts = matchingBuy ? matchingBuy.costs : 0;
-    cash += notional - costs.total;
-    totalTurnover += notional;
-    trades.push({
-      symbol: options.symbol || null,
-      side: 'SELL',
-      signalDate: last.date,
-      executionDate: last.date,
-      price: last.close,
-      quantity,
-      notional,
-      costs: costs.total,
-      grossPnl,
-      netPnl: grossPnl - entryCosts - costs.total,
-      entryDate,
-      forcedResearchClose: true,
-      ruleVersion: 'RESEARCH_END_CLOSE',
-      reasonCodes: ['END_OF_BACKTEST'],
+    const execution = simulateDailyExecution({
+      side: 'SELL', requestedQuantity: quantity, referencePrice: last.close,
+      dailyVolume: last.volume, boardLot, maxParticipationRate,
+      impactBpsAtMaxParticipation, costModel,
     });
-    quantity = 0;
+    if (execution.filled) {
+      const matchingBuy = [...trades].reverse().find((trade) => trade.side === 'BUY' && !trade.closed);
+      const entryCosts = matchingBuy ? matchingBuy.costs : 0;
+      const grossPnl = (execution.price - entryPrice) * quantity;
+      cash += execution.notional - execution.costs.total;
+      totalTurnover += execution.notional;
+      trades.push({
+        symbol: options.symbol || null,
+        side: 'SELL',
+        signalDate: last.date,
+        executionDate: last.date,
+        price: execution.price,
+        quantity,
+        notional: execution.notional,
+        costs: execution.costs.total,
+        marketImpact: execution.costs.marketImpact,
+        participationRate: execution.participationRate,
+        grossPnl,
+        netPnl: grossPnl - entryCosts - execution.costs.total,
+        entryDate,
+        forcedResearchClose: true,
+        ruleVersion: 'RESEARCH_END_CLOSE',
+        reasonCodes: ['END_OF_BACKTEST'],
+      });
+      quantity = 0;
+    } else {
+      executionRejectedOrders += 1;
+      if (execution.reason === 'LIQUIDITY_LIMIT') liquidityRejectedOrders += 1;
+    }
   }
 
-  const finalEquity = cash;
+  const finalEquity = cash + quantity * Number(last?.close || 0);
   const dailyReturns = [];
   for (let index = 1; index < equityCurve.length; index += 1) {
     const previous = equityCurve[index - 1].equity;
@@ -185,16 +242,17 @@ function backtestActiveStrategy(stockCandles, benchmarkCandles, options = {}) {
   const averageWin = winners.length > 0 ? winners.reduce((sum, item) => sum + item.netPnl, 0) / winners.length : 0;
   const averageLoss = losers.length > 0 ? Math.abs(losers.reduce((sum, item) => sum + item.netPnl, 0) / losers.length) : 0;
 
-  const firstBenchmark = alignedBenchmark.slice(warmupBars).find(Boolean);
+  const firstBenchmark = alignedBenchmark.slice(evaluationStartIndex).find(Boolean);
   const lastBenchmark = [...alignedBenchmark].reverse().find(Boolean);
   const benchmarkReturn = firstBenchmark && lastBenchmark
-    ? (Number(lastBenchmark.adjustedClose || lastBenchmark.close) / Number(firstBenchmark.adjustedClose || firstBenchmark.close)) - 1
+    ? (Number(lastBenchmark.close) / Number(firstBenchmark.close)) - 1
     : null;
+  const benchmarkPortfolioReturn = benchmarkReturn == null ? null : benchmarkReturn * maxPositionWeight;
 
   return {
     strategy: 'MOMENTUM_BREAKOUT_V1',
     symbol: options.symbol || null,
-    startDate: stockCandles[warmupBars]?.date || null,
+    startDate: stockCandles[evaluationStartIndex]?.date || null,
     endDate: last?.date || null,
     assumptions: {
       nextBarExecution: true,
@@ -202,6 +260,8 @@ function backtestActiveStrategy(stockCandles, benchmarkCandles, options = {}) {
       maxPositionWeight,
       boardLot,
       costModel,
+      maxParticipationRate,
+      impactBpsAtMaxParticipation,
       benchmark: options.benchmark || 'SET_INDEX_PROXY',
       cashReturn: 0,
     },
@@ -217,8 +277,14 @@ function backtestActiveStrategy(stockCandles, benchmarkCandles, options = {}) {
       winRate: completedTrades.length > 0 ? winners.length / completedTrades.length : 0,
       payoffRatio: averageLoss > 0 ? averageWin / averageLoss : null,
       turnover: initialCapital > 0 ? totalTurnover / initialCapital : 0,
+      executionRejectedOrders,
+      liquidityRejectedOrders,
+      openPositionAtEnd: quantity > 0,
       benchmarkReturn,
-      excessVsBenchmark: benchmarkReturn == null ? null : finalEquity / initialCapital - 1 - benchmarkReturn,
+      benchmarkPortfolioReturn,
+      excessVsBenchmark: benchmarkPortfolioReturn == null
+        ? null
+        : finalEquity / initialCapital - 1 - benchmarkPortfolioReturn,
       excessVsCash: finalEquity / initialCapital - 1,
     },
     trades,
@@ -227,7 +293,98 @@ function backtestActiveStrategy(stockCandles, benchmarkCandles, options = {}) {
   };
 }
 
+function runBacktestStressMatrix(stockCandles, benchmarkCandles, options = {}) {
+  const baseCostModel = options.costModel || loadCostModel();
+  const baseParticipation = Number(options.maxParticipationRate ?? 0.01);
+  const scenarios = [
+    {
+      id: 'BASE',
+      costModel: baseCostModel,
+      maxParticipationRate: baseParticipation,
+      impactBpsAtMaxParticipation: Number(options.impactBpsAtMaxParticipation ?? 25),
+    },
+    {
+      id: 'HIGH_FRICTION',
+      costModel: { ...baseCostModel, slippageBpsPerSide: Math.max(25, Number(baseCostModel.slippageBpsPerSide || 0)) },
+      maxParticipationRate: Math.min(baseParticipation, 0.005),
+      impactBpsAtMaxParticipation: Math.max(50, Number(options.impactBpsAtMaxParticipation || 0)),
+    },
+    {
+      id: 'SEVERE_FRICTION',
+      costModel: { ...baseCostModel, slippageBpsPerSide: Math.max(50, Number(baseCostModel.slippageBpsPerSide || 0)) },
+      maxParticipationRate: Math.min(baseParticipation, 0.0025),
+      impactBpsAtMaxParticipation: Math.max(100, Number(options.impactBpsAtMaxParticipation || 0)),
+    },
+  ].map((scenario) => {
+    const result = backtestActiveStrategy(stockCandles, benchmarkCandles, {
+      ...options,
+      costModel: scenario.costModel,
+      maxParticipationRate: scenario.maxParticipationRate,
+      impactBpsAtMaxParticipation: scenario.impactBpsAtMaxParticipation,
+    });
+    return {
+      id: scenario.id,
+      assumptions: {
+        costModel: scenario.costModel,
+        maxParticipationRate: scenario.maxParticipationRate,
+        impactBpsAtMaxParticipation: scenario.impactBpsAtMaxParticipation,
+      },
+      metrics: result.metrics,
+      result,
+    };
+  });
+
+  const minimumStressTrades = Math.max(1, Number(options.minimumStressTrades ?? 5));
+  const minimumStressReturn = Number(options.minimumStressReturn ?? 0);
+  const maximumStressDrawdown = Number(options.maximumStressDrawdown ?? -0.25);
+  const checks = scenarios.map((scenario) => ({
+    id: scenario.id,
+    finite: [scenario.metrics.totalReturn, scenario.metrics.maxDrawdown, scenario.metrics.cagr]
+      .every((value) => Number.isFinite(Number(value))),
+    enoughTrades: Number(scenario.metrics.completedTrades || 0) >= minimumStressTrades,
+    returnPassed: Number(scenario.metrics.totalReturn || 0) > minimumStressReturn,
+    drawdownPassed: Number(scenario.metrics.maxDrawdown || 0) >= maximumStressDrawdown,
+    noLiquidityRejections: Number(scenario.metrics.liquidityRejectedOrders || 0) === 0,
+  }));
+  const passed = checks.every((check) =>
+    check.finite && check.enoughTrades && check.returnPassed && check.drawdownPassed && check.noLiquidityRejections
+  );
+
+  return {
+    schemaVersion: 1,
+    passed,
+    requirements: { minimumStressTrades, minimumStressReturn, maximumStressDrawdown },
+    checks,
+    scenarios,
+    baseline: scenarios[0].result,
+    worstTotalReturn: Math.min(...scenarios.map((row) => Number(row.metrics.totalReturn || 0))),
+    worstDrawdown: Math.min(...scenarios.map((row) => Number(row.metrics.maxDrawdown || 0))),
+  };
+}
+
+function runBacktestValidationSuite(stockCandles, benchmarkCandles, options = {}) {
+  const warmupBars = Math.max(220, Number(options.warmupBars || 220));
+  const oosBars = Math.max(1, Math.floor(Number(options.oosBars ?? 504)));
+  const holdoutIndex = Math.max(warmupBars, stockCandles.length - oosBars);
+  const startDate = stockCandles[holdoutIndex]?.date || null;
+  const fullSample = runBacktestStressMatrix(stockCandles, benchmarkCandles, options);
+  const recentHoldout = runBacktestStressMatrix(stockCandles, benchmarkCandles, {
+    ...options,
+    evaluationStartDate: startDate,
+    minimumStressTrades: Number(options.minimumHoldoutTrades ?? 3),
+  });
+  return {
+    schemaVersion: 1,
+    passed: fullSample.passed && recentHoldout.passed,
+    oosBars,
+    fullSample,
+    recentHoldout: { ...recentHoldout, startDate },
+  };
+}
+
 module.exports = {
   backtestActiveStrategy,
+  runBacktestStressMatrix,
+  runBacktestValidationSuite,
   metrics: { annualizedReturn, standardDeviation, maxDrawdown },
 };

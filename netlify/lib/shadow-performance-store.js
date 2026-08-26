@@ -10,11 +10,12 @@ async function getStore(event, consistency = 'eventual') {
 
 function defaultState(initialCapital = 100000) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     strategyVersion: 'MOMENTUM_BREAKOUT_V1.0.0',
     initialCapital,
     cash: initialCapital,
     positions: {},
+    pendingSignals: {},
     trades: [],
     equity: initialCapital,
     peakEquity: initialCapital,
@@ -97,23 +98,50 @@ async function listDailyReports(event, limit = 400) {
 function evaluateShadowGate(reports, requirements = {}) {
   const minimumDays = Number(requirements.minimumDays || 20);
   const minimumEvents = Number(requirements.minimumEvents || 100);
+  const minimumTradeEvents = Number(requirements.minimumTradeEvents || 10);
+  const maximumDrawdown = Number(requirements.maximumDrawdown ?? -0.10);
+  const minimumAfterCostReturn = Number(requirements.minimumAfterCostReturn ?? 0);
+  const minimumExcessReturn = Number(requirements.minimumExcessReturn ?? 0);
   const rows = Array.isArray(reports) ? reports : [];
   const tradingDays = new Set(rows.filter((item) => item.marketOpenDay !== false).map((item) => item.date)).size;
   const decisionEvents = rows.reduce((sum, item) => sum + Number(item.decisionEvents || 0), 0);
   const duplicates = rows.reduce((sum, item) => sum + Number(item.duplicateIntentAttempts || 0), 0);
   const unauthorized = rows.reduce((sum, item) => sum + Number(item.unauthorizedExecutionAttempts || 0), 0);
   const dataFailures = rows.reduce((sum, item) => sum + Number(item.dataQualityFailures || 0), 0);
+  const tradeEvents = rows.reduce((sum, item) => sum + Number(item.shadowTradeEvents || 0), 0);
   const benchmarkRows = rows.filter((item) => Number(item.setTriValue || 0) > 0);
   const benchmarkCoverage = rows.length > 0 ? benchmarkRows.length / rows.length : 0;
   const latest = rows[rows.length - 1] || null;
+  const firstEquityRow = rows.find((item) => Number(item.equity || 0) > 0) || null;
+  const initialCapital = Number(firstEquityRow?.initialCapital || firstEquityRow?.equity || 0);
+  const latestEquity = Number(latest?.equity || 0);
+  const shadowReturn = initialCapital > 0 && latestEquity > 0
+    ? (latestEquity / initialCapital) - 1
+    : null;
+  const firstBenchmark = benchmarkRows[0] || null;
+  const lastBenchmark = benchmarkRows[benchmarkRows.length - 1] || null;
+  const benchmarkReturn = Number(firstBenchmark?.setTriValue || 0) > 0 && Number(lastBenchmark?.setTriValue || 0) > 0
+    ? (Number(lastBenchmark.setTriValue) / Number(firstBenchmark.setTriValue)) - 1
+    : null;
+  const excessReturn = shadowReturn !== null && benchmarkReturn !== null
+    ? shadowReturn - benchmarkReturn
+    : null;
+  const worstDrawdown = rows.length > 0
+    ? Math.min(...rows.map((item) => Number(item.maxDrawdown ?? 0)))
+    : null;
 
   const checks = {
     minimumTradingDays: tradingDays >= minimumDays,
     minimumDecisionEvents: decisionEvents >= minimumEvents,
     zeroDuplicateIntents: duplicates === 0,
     zeroUnauthorizedExecution: unauthorized === 0,
+    zeroDataQualityFailures: dataFailures === 0,
+    minimumTradeEvents: tradeEvents >= minimumTradeEvents,
     benchmarkCoverage: benchmarkCoverage >= 0.90,
     latestReportExists: Boolean(latest),
+    positiveAfterCostReturn: shadowReturn !== null && shadowReturn > minimumAfterCostReturn,
+    positiveBenchmarkExcess: excessReturn !== null && excessReturn > minimumExcessReturn,
+    drawdownWithinLimit: worstDrawdown !== null && worstDrawdown >= maximumDrawdown,
   };
 
   return {
@@ -124,7 +152,12 @@ function evaluateShadowGate(reports, requirements = {}) {
     duplicates,
     unauthorized,
     dataFailures,
+    tradeEvents,
     benchmarkCoverage,
+    shadowReturn,
+    benchmarkReturn,
+    excessReturn,
+    worstDrawdown,
     latest,
   };
 }

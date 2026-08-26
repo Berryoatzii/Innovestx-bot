@@ -72,11 +72,14 @@ ALLOWED_ORIGIN
 ค่า InnovestX / Settrade:
 
 ```text
-INVX_KEY
-INVX_SECRET
-INVX_PIN
-INVX_ACCOUNT
+BROKER_GATEWAY_URL
+BROKER_GATEWAY_TOKEN
+BROKER_GATEWAY_ENVIRONMENT
 ```
+
+`SETTRADE_APP_ID`, `SETTRADE_APP_SECRET`, `SETTRADE_ACCOUNT_NO` and
+`SETTRADE_PIN` must exist only in the private worker's `broker_gateway/.env`.
+Never place broker credentials in Netlify or the browser.
 
 ## Limited Live Pilot
 

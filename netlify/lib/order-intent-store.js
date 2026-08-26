@@ -168,12 +168,16 @@ async function getIntent(id, event, options = {}) {
 }
 
 const ALLOWED_TRANSITIONS = {
-  PENDING_APPROVAL: new Set(['APPROVING', 'REJECTED', 'EXPIRED']),
-  APPROVING: new Set(['PENDING_APPROVAL', 'FAILED_PRECHECK', 'SUBMITTED', 'EXECUTION_UNCERTAIN']),
+  PENDING_APPROVAL: new Set(['APPROVING', 'APPROVED_QUEUED', 'REJECTED', 'EXPIRED']),
+  APPROVED_QUEUED: new Set(['WORKER_CLAIMED', 'EXPIRED']),
+  WORKER_CLAIMED: new Set(['FAILED_PRECHECK', 'SUBMITTING', 'EXECUTION_UNCERTAIN']),
+  APPROVING: new Set(['PENDING_APPROVAL', 'FAILED_PRECHECK', 'SUBMITTING']),
+  SUBMITTING: new Set(['SUBMITTED', 'REJECTED_BY_BROKER', 'EXECUTION_UNCERTAIN']),
   SUBMITTED: new Set(['ACKNOWLEDGED', 'RECONCILE_PENDING', 'EXECUTION_UNCERTAIN']),
-  RECONCILE_PENDING: new Set(['ACKNOWLEDGED', 'PARTIALLY_FILLED', 'FILLED', 'REJECTED_BY_BROKER', 'CANCELLED', 'EXECUTION_UNCERTAIN']),
-  ACKNOWLEDGED: new Set(['RECONCILE_PENDING', 'PARTIALLY_FILLED', 'FILLED', 'REJECTED_BY_BROKER', 'CANCELLED', 'EXECUTION_UNCERTAIN']),
-  PARTIALLY_FILLED: new Set(['RECONCILE_PENDING', 'FILLED', 'CANCELLED', 'REJECTED_BY_BROKER', 'EXECUTION_UNCERTAIN']),
+  RECONCILE_PENDING: new Set(['ACKNOWLEDGED', 'PARTIALLY_FILLED', 'FILLED', 'REJECTED_BY_BROKER', 'CANCELLED', 'EXPIRED_BY_BROKER', 'EXECUTION_UNCERTAIN']),
+  ACKNOWLEDGED: new Set(['RECONCILE_PENDING', 'PARTIALLY_FILLED', 'FILLED', 'REJECTED_BY_BROKER', 'CANCELLED', 'EXPIRED_BY_BROKER', 'EXECUTION_UNCERTAIN']),
+  PARTIALLY_FILLED: new Set(['RECONCILE_PENDING', 'FILLED', 'CANCELLED', 'REJECTED_BY_BROKER', 'EXPIRED_BY_BROKER', 'EXECUTION_UNCERTAIN']),
+  EXECUTION_UNCERTAIN: new Set(['ACKNOWLEDGED', 'RECONCILE_PENDING', 'PARTIALLY_FILLED', 'FILLED', 'REJECTED_BY_BROKER', 'CANCELLED', 'EXPIRED_BY_BROKER']),
 };
 
 function canTransition(from, to) {
@@ -218,30 +222,63 @@ async function transitionIntent(id, expectedStatuses, nextStatus, patch = {}, op
   return next;
 }
 
-async function listIntents(event, { status, limit = 200 } = {}) {
-  const store = await getIntentStore(event, 'eventual');
-  const { blobs } = await store.list({ prefix: INTENT_PREFIX });
-  const selected = blobs.slice(-Math.max(1, Math.min(1000, limit)));
+async function collectBlobRefs(store, prefix) {
+  const refs = [];
+  const pages = store.list({ prefix, paginate: true });
+  for await (const page of pages) {
+    refs.push(...(Array.isArray(page?.blobs) ? page.blobs : []));
+  }
+  return refs;
+}
+
+async function listIntents(event, { status, limit = 200, consistency = 'eventual' } = {}) {
+  const store = await getIntentStore(event, consistency);
+  const blobs = await collectBlobRefs(store, INTENT_PREFIX);
   const rows = [];
-  for (const blob of selected) {
+  for (const blob of blobs) {
     const item = await store.get(blob.key, { type: 'json' });
     if (!item) continue;
     if (status && item.status !== status) continue;
     rows.push(item);
   }
-  return rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  return rows
+    .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+    .slice(0, Math.max(1, Math.min(10000, limit)));
 }
 
-async function getDailyExecutionStats(event, date = new Date()) {
+function calculateDailyExecutionStats(intents, date = new Date(), options = {}) {
   const day = date.toISOString().slice(0, 10);
-  const intents = await listIntents(event, { limit: 1000 });
-  const executedStatuses = new Set(['SUBMITTED', 'ACKNOWLEDGED', 'RECONCILE_PENDING', 'PARTIALLY_FILLED', 'FILLED']);
-  const matched = intents.filter((intent) => String(intent.createdAt || '').startsWith(day) && executedStatuses.has(intent.status));
+  // Reserve risk for concurrent approvals and uncertain broker responses.
+  // Both may already represent real exposure and must fail closed.
+  const exposureStatuses = new Set([
+    'APPROVING',
+    'SUBMITTING',
+    'SUBMITTED',
+    'ACKNOWLEDGED',
+    'RECONCILE_PENDING',
+    'PARTIALLY_FILLED',
+    'FILLED',
+    'EXECUTION_UNCERTAIN',
+  ]);
+  const excludedId = String(options.excludeIntentId || '').toLowerCase();
+  const matched = (Array.isArray(intents) ? intents : []).filter((intent) =>
+    String(intent.createdAt || '').startsWith(day) &&
+    exposureStatuses.has(intent.status) &&
+    String(intent.id || '').toLowerCase() !== excludedId
+  );
   return {
     date: day,
     count: matched.length,
     notional: Number(matched.reduce((sum, item) => sum + Number(item.broker?.submittedValue || item.estimatedValue || 0), 0).toFixed(2)),
   };
+}
+
+async function getDailyExecutionStats(event, date = new Date(), options = {}) {
+  // Money-moving preflight must see every page from an uncached/strong store.
+  // If strong consistency is unavailable, openBlobStore throws and approval
+  // fails closed instead of undercounting daily exposure.
+  const intents = await listIntents(event, { limit: 10000, consistency: 'strong' });
+  return calculateDailyExecutionStats(intents, date, options);
 }
 
 function isExpired(intent, now = new Date()) {
@@ -259,7 +296,9 @@ module.exports = {
   getIntentWithMetadata,
   transitionIntent,
   listIntents,
+  collectBlobRefs,
   getDailyExecutionStats,
+  calculateDailyExecutionStats,
   isExpired,
   canTransition,
   _test: { normalizeSymbol, normalizeSide, normalizeOrderStyle, intentIdFromKey, intentKey },

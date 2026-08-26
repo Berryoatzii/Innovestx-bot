@@ -110,6 +110,7 @@ test('backtest gate requires after-cost return, benchmark edge, decisions and co
       maxDrawdown: -0.12,
       cagr: 0.09,
     },
+    robustness: { passed: true },
     decisionLog: new Array(300).fill({}),
   });
   assert.equal(passing.passed, true);
@@ -122,10 +123,27 @@ test('backtest gate requires after-cost return, benchmark edge, decisions and co
       maxDrawdown: -0.12,
       cagr: 0.09,
     },
+    robustness: { passed: true },
     decisionLog: new Array(300).fill({}),
   });
   assert.equal(failing.passed, false);
   assert.equal(failing.checks.beatsBenchmark, false);
+});
+
+test('backtest gate fails closed without explicit stress evidence', () => {
+  const { evaluateBacktestGate } = require('../netlify/lib/research-results-store');
+  const result = evaluateBacktestGate({
+    metrics: {
+      completedTrades: 8,
+      totalReturn: 0.18,
+      excessVsBenchmark: 0.05,
+      maxDrawdown: -0.12,
+      cagr: 0.09,
+    },
+    decisionLog: new Array(300).fill({}),
+  });
+  assert.equal(result.passed, false);
+  assert.equal(result.checks.robustnessPassed, false);
 });
 
 test('order signature changes when symbol side quantity or price changes', () => {

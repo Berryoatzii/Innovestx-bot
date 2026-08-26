@@ -1,4 +1,5 @@
-const { transactionCost, loadCostModel } = require('./cost-model');
+const { loadCostModel } = require('./cost-model');
+const { simulateDailyExecution } = require('./execution-realism');
 
 function round(value, digits = 2) {
   const factor = 10 ** digits;
@@ -43,45 +44,27 @@ function applySignals(stateInput, evaluations, options = {}) {
   const maxPositions = Math.max(1, Math.floor(Number(options.maxPositions || 4)));
   const boardLot = Math.max(1, Math.floor(Number(options.boardLot || 100)));
   const runDate = options.date || new Date().toISOString().slice(0, 10);
-  let state = markToMarket({ ...stateInput, positions: { ...(stateInput.positions || {}) } }, options.priceMap || {});
+  const executionPriceMap = options.executionPriceMap || {};
+  const volumeMap = options.volumeMap || {};
+  const maxParticipationRate = Number(options.maxParticipationRate ?? 0.01);
+  const impactBpsAtMaxParticipation = Number(options.impactBpsAtMaxParticipation ?? 25);
+  let state = markToMarket({
+    ...stateInput,
+    schemaVersion: 2,
+    positions: { ...(stateInput.positions || {}) },
+    pendingSignals: { ...(stateInput.pendingSignals || {}) },
+  }, options.priceMap || {});
   const events = [];
 
-  for (const evaluation of evaluations) {
-    const symbol = String(evaluation.symbol || '').toUpperCase();
-    const price = Number(evaluation.price || evaluation.features?.close || 0);
+  for (const [symbol, pending] of Object.entries(state.pendingSignals)) {
+    if (String(pending.signalDate || '') >= runDate) continue;
+    delete state.pendingSignals[symbol];
+    const price = Number(executionPriceMap[symbol] || 0);
     const existing = state.positions[symbol];
 
-    if (evaluation.action === 'EXIT_REVIEW' && existing) {
-      const notional = existing.quantity * price;
-      const costs = transactionCost(notional, model);
-      const netProceeds = notional - costs.total;
-      const grossPnl = (price - existing.entryPrice) * existing.quantity;
-      const netPnl = grossPnl - Number(existing.entryCosts || 0) - costs.total;
-      state.cash = round(Number(state.cash || 0) + netProceeds);
-      delete state.positions[symbol];
-      const trade = {
-        date: runDate,
-        side: 'SELL',
-        symbol,
-        quantity: existing.quantity,
-        price,
-        notional: round(notional),
-        costs: round(costs.total),
-        grossPnl: round(grossPnl),
-        netPnl: round(netPnl),
-        entryDate: existing.entryDate,
-        reasonCodes: evaluation.reasonCodes || [],
-        strategyAuthority: 'RULES_ONLY',
-      };
-      state.trades = [...(state.trades || []), trade];
-      events.push(trade);
-      state = markToMarket(state, options.priceMap || {});
-      continue;
-    }
-
-    if (evaluation.action === 'BUY_CANDIDATE' && !existing) {
-      if (Object.keys(state.positions).length >= maxPositions) {
-        events.push({ date: runDate, action: 'SKIP', symbol, reason: 'MAX_ACTIVE_POSITIONS' });
+    if (pending.action === 'BUY_CANDIDATE') {
+      if (existing || Object.keys(state.positions).length >= maxPositions) {
+        events.push({ date: runDate, action: 'SKIP', symbol, reason: existing ? 'POSITION_ALREADY_EXISTS' : 'MAX_ACTIVE_POSITIONS' });
         continue;
       }
       const quantity = calculateShadowQuantity({ state, price, maxPositionWeight, boardLot });
@@ -89,38 +72,92 @@ function applySignals(stateInput, evaluations, options = {}) {
         events.push({ date: runDate, action: 'SKIP', symbol, reason: 'POSITION_SIZE_ZERO' });
         continue;
       }
-      const notional = quantity * price;
-      const costs = transactionCost(notional, model);
-      if (notional + costs.total > Number(state.cash || 0)) {
+      const execution = simulateDailyExecution({
+        side: 'BUY', requestedQuantity: quantity, referencePrice: price,
+        dailyVolume: volumeMap[symbol], boardLot, maxParticipationRate,
+        impactBpsAtMaxParticipation, costModel: model,
+      });
+      if (!execution.filled) {
+        events.push({ date: runDate, action: 'SKIP', symbol, reason: execution.reason, pendingExpired: true });
+        continue;
+      }
+      if (execution.notional + execution.costs.total > Number(state.cash || 0)) {
         events.push({ date: runDate, action: 'SKIP', symbol, reason: 'INSUFFICIENT_SHADOW_CASH' });
         continue;
       }
-      state.cash = round(Number(state.cash || 0) - notional - costs.total);
+      state.cash = round(Number(state.cash || 0) - execution.notional - execution.costs.total);
       state.positions[symbol] = {
         symbol,
         quantity,
-        entryPrice: price,
+        entryPrice: execution.price,
         entryDate: runDate,
-        entryCosts: round(costs.total),
-        lastPrice: price,
-        marketValue: round(notional),
-        strategyVersion: evaluation.ruleVersion,
+        signalDate: pending.signalDate,
+        entryCosts: round(execution.costs.total),
+        lastPrice: execution.price,
+        marketValue: round(execution.notional),
+        strategyVersion: pending.ruleVersion,
       };
       const trade = {
-        date: runDate,
-        side: 'BUY',
-        symbol,
-        quantity,
-        price,
-        notional: round(notional),
-        costs: round(costs.total),
-        reasonCodes: evaluation.reasonCodes || [],
-        strategyAuthority: 'RULES_ONLY',
+        date: runDate, signalDate: pending.signalDate, side: 'BUY', symbol, quantity,
+        price: execution.price, notional: round(execution.notional),
+        costs: round(execution.costs.total), marketImpact: round(execution.costs.marketImpact, 4),
+        participationRate: execution.participationRate,
+        reasonCodes: pending.reasonCodes || [], strategyAuthority: 'RULES_ONLY',
+      };
+      state.trades = [...(state.trades || []), trade];
+      events.push(trade);
+      state = markToMarket(state, options.priceMap || {});
+      continue;
+    }
+
+    if (pending.action === 'EXIT_REVIEW') {
+      if (!existing) {
+        events.push({ date: runDate, action: 'SKIP', symbol, reason: 'POSITION_NOT_FOUND' });
+        continue;
+      }
+      const execution = simulateDailyExecution({
+        side: 'SELL', requestedQuantity: existing.quantity, referencePrice: price,
+        dailyVolume: volumeMap[symbol], boardLot, maxParticipationRate,
+        impactBpsAtMaxParticipation, costModel: model,
+      });
+      if (!execution.filled) {
+        events.push({ date: runDate, action: 'SKIP', symbol, reason: execution.reason, pendingExpired: true });
+        continue;
+      }
+      const grossPnl = (execution.price - existing.entryPrice) * existing.quantity;
+      const netPnl = grossPnl - Number(existing.entryCosts || 0) - execution.costs.total;
+      state.cash = round(Number(state.cash || 0) + execution.notional - execution.costs.total);
+      delete state.positions[symbol];
+      const trade = {
+        date: runDate, signalDate: pending.signalDate, side: 'SELL', symbol,
+        quantity: existing.quantity, price: execution.price,
+        notional: round(execution.notional), costs: round(execution.costs.total),
+        marketImpact: round(execution.costs.marketImpact, 4),
+        participationRate: execution.participationRate,
+        grossPnl: round(grossPnl), netPnl: round(netPnl), entryDate: existing.entryDate,
+        reasonCodes: pending.reasonCodes || [], strategyAuthority: 'RULES_ONLY',
       };
       state.trades = [...(state.trades || []), trade];
       events.push(trade);
       state = markToMarket(state, options.priceMap || {});
     }
+  }
+
+  for (const evaluation of evaluations) {
+    const symbol = String(evaluation.symbol || '').toUpperCase();
+    const existing = state.positions[symbol];
+    const queueable = (
+      (evaluation.action === 'BUY_CANDIDATE' && !existing) ||
+      (evaluation.action === 'EXIT_REVIEW' && existing)
+    );
+    if (!queueable || state.pendingSignals[symbol]) continue;
+    state.pendingSignals[symbol] = {
+      action: evaluation.action,
+      signalDate: runDate,
+      reasonCodes: evaluation.reasonCodes || [],
+      ruleVersion: evaluation.ruleVersion || null,
+    };
+    events.push({ date: runDate, action: 'QUEUED_NEXT_SESSION', symbol, signal: evaluation.action });
   }
 
   state = markToMarket(state, options.priceMap || {});
