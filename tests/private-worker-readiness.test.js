@@ -55,6 +55,16 @@ test('a private worker flag without drill evidence can never pass', () => {
   assert.ok(result.blockers.includes('WORKER_OUTAGE_DRILL_MISSING'));
 });
 
+test('missing alert evidence keeps the private worker locked', () => {
+  const result = evaluatePrivateWorkerReadiness({
+    ...completeEvidence,
+    alertsVerified: false,
+  }, new Date('2026-08-06T00:00:00.000Z'));
+
+  assert.equal(result.passed, false);
+  assert.ok(result.blockers.includes('WORKER_ALERTS_UNVERIFIED'));
+});
+
 test('checked-in release manifest remains fail-closed before the production worker is complete', () => {
   const result = evaluatePrivateWorkerReadiness(releaseManifest.privateWorkerEvidence);
 

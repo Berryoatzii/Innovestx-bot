@@ -107,6 +107,18 @@ test('market data gate rejects stale-looking zero quotes and wide spreads', () =
   assert.throws(() => validateMarketData(intent, { last: 10, bid: 9, ask: 11 }), /SPREAD_TOO_WIDE/);
 });
 
+test('market data gate rejects excessive price drift and resting-limit distance', () => {
+  const { validateMarketData } = require('../netlify/lib/approval-executor');
+  assert.throws(() => validateMarketData(
+    { side: 'SELL', proposedPrice: 10, orderStyle: 'MARKETABLE_LIMIT' },
+    { last: 10.6, bid: 10.58, ask: 10.6 },
+  ), /PRICE_DRIFT_TOO_HIGH/);
+  assert.throws(() => validateMarketData(
+    { side: 'BUY', proposedPrice: 8, orderStyle: 'RESTING_LIMIT' },
+    { last: 10, bid: 9.98, ask: 10 },
+  ), /RESTING_LIMIT_TOO_FAR/);
+});
+
 test('approval engine is fail-closed by default', () => {
   const { approvalAvailability } = require('../netlify/lib/approval-executor');
   const availability = approvalAvailability();
