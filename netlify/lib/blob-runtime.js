@@ -46,12 +46,24 @@ function runtimeContext(event) {
     decodeContext(process.env.NETLIFY_BLOBS_CONTEXT);
 }
 
+function directApiOptions(event) {
+  const context = runtimeContext(event) || {};
+  const siteID = context.siteID || process.env.NETLIFY_BLOBS_SITE_ID;
+  const token = context.token || process.env.NETLIFY_BLOBS_TOKEN;
+  if (!siteID || !token) return null;
+  return {
+    siteID,
+    token,
+    ...(context.apiURL ? { apiURL: context.apiURL } : {}),
+  };
+}
+
 function strongConsistencyAvailable(event) {
   const context = runtimeContext(event);
   return Boolean(
     context?.uncachedEdgeURL ||
     context?.apiURL ||
-    (process.env.NETLIFY_BLOBS_SITE_ID && process.env.NETLIFY_BLOBS_TOKEN)
+    directApiOptions(event)
   );
 }
 
@@ -83,6 +95,15 @@ async function openBlobStore(name, options = {}) {
       error.code = 'BLOBS_STRONG_CONSISTENCY_UNAVAILABLE';
       throw error;
     }
+    // Lambda compatibility contexts can contain an authenticated edge client
+    // without an uncachedEdgeURL. In that case the SDK rejects strong reads
+    // before making a request. Supplying the same short-lived site credentials
+    // explicitly makes the SDK use Netlify's uncached API endpoint instead.
+    // Credentials stay inside the function runtime and are never persisted.
+    if (!runtimeContext(event)?.uncachedEdgeURL) {
+      const direct = directApiOptions(event);
+      if (direct) return mod.getStore({ name, consistency: 'strong', ...direct });
+    }
     return mod.getStore({ name, consistency: 'strong' });
   }
 
@@ -113,5 +134,5 @@ module.exports = {
   strongConsistencyAvailable,
   readOptions,
   isStrongConsistencyError,
-  _test: { decodeContext, getHeader },
+  _test: { decodeContext, getHeader, directApiOptions },
 };
