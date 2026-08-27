@@ -16,7 +16,7 @@ function encodedContext(value) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64');
 }
 
-test('edge-only Lambda context does not claim strong consistency support', () => {
+test('edge-only Lambda context can use authenticated API fallback for strong consistency', () => {
   const { runtimeContext, strongConsistencyAvailable } = require('../netlify/lib/blob-runtime');
   const event = {
     blobs: encodedContext({
@@ -28,6 +28,16 @@ test('edge-only Lambda context does not claim strong consistency support', () =>
   };
 
   assert.equal(runtimeContext(event).edgeURL, 'https://edge.example.test');
+  assert.equal(strongConsistencyAvailable(event), true);
+});
+
+test('edge-only Lambda context without credentials still fails closed', () => {
+  const { strongConsistencyAvailable } = require('../netlify/lib/blob-runtime');
+  const event = {
+    blobs: encodedContext({ edgeURL: 'https://edge.example.test' }),
+    headers: {},
+  };
+
   assert.equal(strongConsistencyAvailable(event), false);
 });
 
