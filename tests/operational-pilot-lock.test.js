@@ -13,8 +13,9 @@ function atomicMemoryStore() {
     async set(key, body, options) {
       assert.equal(key, LOCK_KEY);
       assert.equal(options.onlyIfNew, true);
-      if (value !== null) throw new Error('PRECONDITION_FAILED');
+      if (value !== null) return { modified: false };
       value = JSON.parse(body);
+      return { modified: true, etag: 'memory-etag' };
     },
     async get(key) {
       assert.equal(key, LOCK_KEY);
@@ -53,3 +54,15 @@ test('unknown lock-write outcome fails closed', async () => {
     /OPERATIONAL_PILOT_LOCK_UNCERTAIN:NETWORK_TIMEOUT/,
   );
 });
+
+test('atomic not-modified response can never be reported as a reservation', async () => {
+  const store = {
+    async set() { return { modified: false }; },
+    async get() { return null; },
+  };
+  await assert.rejects(
+    () => reserveWithStore(store, intent),
+    /OPERATIONAL_PILOT_LOCK_UNCERTAIN:ATOMIC_WRITE_NOT_MODIFIED/,
+  );
+});
+
