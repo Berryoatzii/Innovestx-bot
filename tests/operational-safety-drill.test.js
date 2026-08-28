@@ -10,8 +10,9 @@ function atomicMemoryStore() {
   let value = null;
   return {
     async set(_key, body, options) {
-      if (options.onlyIfNew && value !== null) throw new Error('PRECONDITION_FAILED');
+      if (options.onlyIfNew && value !== null) return { modified: false };
       value = JSON.parse(body);
+      return { modified: true, etag: 'memory-etag' };
     },
     async get() { return value; },
   };
@@ -40,3 +41,4 @@ test('safety drill evidence cannot imply a broker call or money movement', () =>
   assert.equal(evidence.orderIntentCreated, false);
   assert.equal(evidence.moneyMoving, false);
 });
+
