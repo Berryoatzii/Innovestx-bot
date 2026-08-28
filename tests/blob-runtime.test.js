@@ -31,6 +31,30 @@ test('edge-only Lambda context can use authenticated API fallback for strong con
   assert.equal(strongConsistencyAvailable(event), true);
 });
 
+test('Netlify Lambda compatibility payload combines blob token with site header', () => {
+  const { runtimeContext, strongConsistencyAvailable, _test } = require('../netlify/lib/blob-runtime');
+  const event = {
+    blobs: encodedContext({
+      url: 'https://edge.example.test',
+      token: 'token-test',
+    }),
+    headers: {
+      'x-nf-site-id': 'site-test',
+      'x-nf-deploy-id': 'deploy-test',
+    },
+  };
+
+  const context = runtimeContext(event);
+  assert.equal(context.edgeURL, 'https://edge.example.test');
+  assert.equal(context.siteID, 'site-test');
+  assert.equal(context.deployID, 'deploy-test');
+  assert.deepEqual(_test.directApiOptions(event), {
+    siteID: 'site-test',
+    token: 'token-test',
+  });
+  assert.equal(strongConsistencyAvailable(event), true);
+});
+
 test('edge-only Lambda context without credentials still fails closed', () => {
   const { strongConsistencyAvailable } = require('../netlify/lib/blob-runtime');
   const event = {
@@ -70,3 +94,4 @@ test('runtime error from screenshot is recognized as a strong consistency proble
     "Netlify Blobs has failed to perform a read using strong consistency because the environment has not been configured with a 'uncachedEdgeURL' property"
   )), true);
 });
+
