@@ -41,9 +41,22 @@ function runtimeContext(event) {
     getHeader(event?.headers, 'x-nf-blobs-context') ||
     getHeader(event?.headers, 'x-netlify-blobs-context');
 
-  return decodeContext(eventValue) ||
+  const decoded = decodeContext(eventValue) ||
     decodeContext(globalThis.netlifyBlobsContext) ||
     decodeContext(process.env.NETLIFY_BLOBS_CONTEXT);
+
+  if (!decoded) return null;
+
+  // Netlify's Lambda compatibility payload contains `{ url, token }`, while
+  // the site identifier is supplied separately as `x-nf-site-id`. Normalize
+  // that platform-native shape so direct uncached API fallback can be used
+  // for strong reads without persisting either credential.
+  return {
+    ...decoded,
+    edgeURL: decoded.edgeURL || decoded.url,
+    siteID: decoded.siteID || getHeader(event?.headers, 'x-nf-site-id'),
+    deployID: decoded.deployID || getHeader(event?.headers, 'x-nf-deploy-id'),
+  };
 }
 
 function directApiOptions(event) {
@@ -95,6 +108,7 @@ async function openBlobStore(name, options = {}) {
       error.code = 'BLOBS_STRONG_CONSISTENCY_UNAVAILABLE';
       throw error;
     }
+
     // Lambda compatibility contexts can contain an authenticated edge client
     // without an uncachedEdgeURL. In that case the SDK rejects strong reads
     // before making a request. Supplying the same short-lived site credentials
@@ -136,3 +150,4 @@ module.exports = {
   isStrongConsistencyError,
   _test: { decodeContext, getHeader, directApiOptions },
 };
+
