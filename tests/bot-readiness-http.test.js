@@ -47,12 +47,21 @@ test('public readiness omits broker, cash, positions, approvals, and private row
       checks: { minTradingDays: false },
       latest: { symbol: 'SECRET' },
     },
+    drForwardShadow: {
+      passed: false,
+      tradingDays: 3,
+      instrumentDecisionEvents: 18,
+      rebalanceEvents: 1,
+      dataErrors: 0,
+    },
     approval: { ready: false, callbacks: [{ userId: 'SECRET' }] },
     releaseEvidence: { passed: false, blockers: ['RELEASE_STRATEGY_RELEASE_APPROVED'], private: 'SECRET' },
   });
 
   assert.equal(result.liveTradingEnabled, false);
   assert.equal(result.classificationComplete, true);
+  assert.equal(result.drForwardShadow.tradingDays, 3);
+  assert.equal(result.drForwardShadow.instrumentDecisionEvents, 18);
   assert.deepEqual(result.releaseEvidence.blockers, ['RELEASE_STRATEGY_RELEASE_APPROVED']);
   assert.equal(Object.hasOwn(result, 'broker'), false);
   assert.equal(Object.hasOwn(result, 'approval'), false);

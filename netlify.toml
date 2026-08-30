@@ -35,6 +35,12 @@
   schedule = "35 1 * * 1-5"
   node_bundler = "esbuild"
 
+# Frozen RC2 DR forward evidence — 08:45 BKK on SET trading days.
+# Public market data only; append-only ledger; never creates an order intent.
+[functions."dr-forward-shadow"]
+  schedule = "45 1 * * 1-5"
+  node_bundler = "esbuild"
+
 # Advanced per-symbol onboarding remains callable manually but is no longer scheduled.
 [functions."portfolio-onboarding"]
   node_bundler = "esbuild"

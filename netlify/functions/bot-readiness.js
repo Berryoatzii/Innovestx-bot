@@ -44,6 +44,7 @@ function isDetailedReadAuthorized(event = {}) {
 
 function publicReadiness(readiness = {}) {
   const shadow = readiness.shadowGate || {};
+  const drForwardShadow = readiness.drForwardShadow || {};
   const activeResearch = readiness.activeResearch || {};
   const coreEvidence = readiness.coreEvidence || {};
   const releaseEvidence = readiness.releaseEvidence || {};
@@ -71,6 +72,13 @@ function publicReadiness(readiness = {}) {
       excessReturn: Number(shadow.excessReturn || 0),
       worstDrawdown: Number(shadow.worstDrawdown || 0),
       checks: shadow.checks || {},
+    },
+    drForwardShadow: {
+      passed: Boolean(drForwardShadow.passed),
+      tradingDays: Number(drForwardShadow.tradingDays || 0),
+      instrumentDecisionEvents: Number(drForwardShadow.instrumentDecisionEvents || 0),
+      rebalanceEvents: Number(drForwardShadow.rebalanceEvents || 0),
+      dataErrors: Number(drForwardShadow.dataErrors || 0),
     },
     approvalReady: Boolean(readiness.approval?.ready),
     releaseEvidence: {

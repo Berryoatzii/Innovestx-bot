@@ -13,13 +13,20 @@ function hashFile(relativePath) {
     .digest('hex');
 }
 
+function canonicalTextHash(relativePath) {
+  const text = fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8')
+    .replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+  return crypto.createHash('sha256').update(text).digest('hex');
+}
+
 test('DR execution compatibility evidence is file-bound and semantically verified', () => {
   const relativePath = 'config/dr-execution-compatibility-rc2.json';
   assert.equal(verifyExecutionCompatibilityEvidence({
     path: relativePath,
     sha256: hashFile(relativePath),
   }), true);
-  assert.ok(evidence.implementationRefs.every((reference) => hashFile(reference.path) === reference.sha256));
+  assert.equal(evidence.implementationHashScheme, 'SHA256_UTF8_CANONICAL_LF_V1');
+  assert.ok(evidence.implementationRefs.every((reference) => canonicalTextHash(reference.path) === reference.sha256));
 });
 
 test('local compatibility evidence cannot unlock release flags by itself', () => {

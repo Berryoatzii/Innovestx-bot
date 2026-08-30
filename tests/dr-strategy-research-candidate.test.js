@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const candidate = require('../config/dr-strategy-research-candidate-rc2.json');
+const eolAttestation = require('../config/dr-implementation-eol-attestation-rc2.json');
 
 function fileHash(relativePath) {
   return crypto.createHash('sha256')
@@ -12,10 +13,25 @@ function fileHash(relativePath) {
     .digest('hex');
 }
 
+function canonicalLfHash(relativePath) {
+  const canonical = fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8')
+    .replace(/\r\n/g, '\n');
+  return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
 test('RC2 research candidate is hash-bound to its frozen universe and implementation', () => {
   assert.equal(fileHash(candidate.universeRef.path), candidate.universeRef.sha256);
   for (const reference of candidate.implementationRefs) {
-    assert.equal(fileHash(reference.path), reference.sha256);
+    if (reference.path !== eolAttestation.path) {
+      assert.equal(fileHash(reference.path), reference.sha256);
+      continue;
+    }
+    assert.equal(reference.sha256, eolAttestation.legacyWorkingTreeSha256);
+    assert.equal(canonicalLfHash(reference.path), eolAttestation.canonicalLfSha256);
+    assert.equal(eolAttestation.frozenCommit, 'c8a2d2d70fc7ec908d3bdfc7d6d3dc0049c2c1b4');
+    assert.equal(eolAttestation.logicChanged, false);
+    assert.equal(eolAttestation.holdoutReopened, false);
+    assert.equal(eolAttestation.productionUnlocked, false);
   }
 });
 

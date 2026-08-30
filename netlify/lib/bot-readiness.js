@@ -5,6 +5,7 @@ const { classificationMap, summarizeClassifications } = require('./portfolio-cla
 const { loadEffectivePortfolioPolicy } = require('./effective-portfolio-policy');
 const { listBacktestResults } = require('./research-results-store');
 const { listDailyReports, evaluateShadowGate } = require('./shadow-performance-store');
+const { getForwardShadowLedger } = require('./dr-forward-shadow-store');
 const { getSnapshot, snapshotFreshness } = require('./fundamental-snapshot-store');
 const { getThesisCard, isThesisApproved } = require('./core-thesis-store');
 const { evaluateFundamentals } = require('./fundamental-scorecard');
@@ -90,6 +91,31 @@ async function buildBotReadiness(event = {}) {
     blockers.push(`SHADOW_${shadowGate.tradingDays}D_${shadowGate.decisionEvents}EVENTS`);
   }
 
+  let drForwardShadow = {
+    passed: false,
+    tradingDays: 0,
+    instrumentDecisionEvents: 0,
+    rebalanceEvents: 0,
+    dataErrors: 0,
+    error: null,
+  };
+  try {
+    const { ledger } = await getForwardShadowLedger(event, 'eventual');
+    drForwardShadow = {
+      passed: Boolean(ledger.passed),
+      tradingDays: Number(ledger.tradingDays || 0),
+      instrumentDecisionEvents: Number(ledger.instrumentDecisionEvents || 0),
+      rebalanceEvents: Number(ledger.rebalanceEvents || 0),
+      dataErrors: Number(ledger.dataErrors || 0),
+      error: null,
+    };
+  } catch (error) {
+    drForwardShadow.error = error.message;
+  }
+  if (!drForwardShadow.passed) {
+    blockers.push(`DR_FORWARD_SHADOW_${drForwardShadow.tradingDays}D_${drForwardShadow.rebalanceEvents}REBALANCES`);
+  }
+
   const coreEvidence = await inspectCoreEvidence(coreSymbols, event);
   const corePassed = coreEvidence.filter((item) => item.passed).length;
   if (coreSymbols.length > 0 && corePassed < coreSymbols.length) {
@@ -113,7 +139,7 @@ async function buildBotReadiness(event = {}) {
     classificationComplete: classification.complete,
     hasResearchSymbols: researchSymbols.length + coreSymbols.length > 0,
     activePassed,
-    shadowPassed: shadowGate.passed,
+    shadowPassed: shadowGate.passed && drForwardShadow.passed,
     approvalReady: approval.ready,
     releasePassed: releaseEvidence.passed,
     blockers,
@@ -148,6 +174,7 @@ async function buildBotReadiness(event = {}) {
       rows: activeResearch,
     },
     shadowGate,
+    drForwardShadow,
     approval,
     releaseEvidence,
     blockers: [...new Set(blockers)],
@@ -175,6 +202,7 @@ function readinessText(readiness) {
     `CORE evidence: ${readiness.coreEvidence.passed}/${readiness.coreEvidence.total}`,
     `ACTIVE backtest: ${readiness.activeResearch.passed}/${readiness.activeResearch.total}`,
     `Shadow: ${readiness.shadowGate.tradingDays} วัน / ${readiness.shadowGate.decisionEvents} decisions`,
+    `RC2 DR shadow: ${readiness.drForwardShadow.tradingDays} วัน / ${readiness.drForwardShadow.rebalanceEvents} rebalance`,
     `Live locks: ${readiness.approval.ready ? '✅ พร้อม' : '🔒 ปิด'}`,
   ];
   if (readiness.blockers.length > 0) {

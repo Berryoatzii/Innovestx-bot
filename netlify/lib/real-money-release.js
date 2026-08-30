@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { evaluatePrivateWorkerReadiness } = require('./private-worker-readiness');
 const { evaluatePilotCapital } = require('./pilot-capital-feasibility');
+const { verifyForwardShadowLedger } = require('./dr-forward-shadow');
 
 const REQUIRED_BOOLEAN_EVIDENCE = [
   'uatOrderCycleComplete',
@@ -134,18 +135,14 @@ function verifyForwardShadowEvidence(reference = {}, root = path.resolve(__dirna
   if (!evidence) return false;
   try {
     const { candidate, candidateSha256 } = currentCandidateIdentity(root);
-    return evidence.evidenceType === 'DR_FORWARD_SHADOW'
-      && evidence.passed === true
-      && evidence.candidateId === candidate.candidateId
-      && evidence.strategyVersion === candidate.strategyVersion
-      && evidence.candidateSha256 === candidateSha256
-      && Number(evidence.tradingDays) >= 20
-      && Number(evidence.instrumentDecisionEvents) >= 6
-      && Number(evidence.rebalanceEvents) >= 1
-      && Number(evidence.dataErrors) === 0
-      && evidence.brokerCalled === false
-      && evidence.orderIntentCreated === false
-      && evidence.moneyMoving === false;
+    return verifyForwardShadowLedger(
+      evidence,
+      {
+        candidateId: candidate.candidateId,
+        strategyVersion: candidate.strategyVersion,
+        candidateSha256,
+      },
+    );
   } catch {
     return false;
   }

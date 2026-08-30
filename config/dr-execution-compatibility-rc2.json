@@ -4,7 +4,8 @@
   "candidateId": "AEGIS-DR-ROTATION-RC2-2026-08-31",
   "strategyVersion": "DIVERSIFIED_DR_TREND_BUFFER_V1.0.0",
   "candidateSha256": "609a4773b6a9f8bd93e103ba3cd36fa310402adcec4e82d27a187511d4262059",
-  "verifiedAt": "2026-08-31T02:00:00+07:00",
+  "verifiedAt": "2026-08-31T06:45:59+07:00",
+  "implementationHashScheme": "SHA256_UTF8_CANONICAL_LF_V1",
   "passed": true,
   "restingLimitOnlyVerified": true,
   "perOrderBoardLotVerified": true,
@@ -15,7 +16,7 @@
   "brokerCalled": false,
   "moneyMoving": false,
   "testResults": {
-    "node": { "passed": 201, "failed": 0 },
+    "node": { "passed": 207, "failed": 0 },
     "pythonGateway": { "passed": 118, "failed": 0 }
   },
   "implementationRefs": [
@@ -25,19 +26,19 @@
     },
     {
       "path": "netlify/lib/order-intent-store.js",
-      "sha256": "fb621fab238e50928edff68040d03a4e9e35d3810f7a44ba7280a65a5e1921ac"
+      "sha256": "03852bf101614ee035b9dc03e6616fd05d6810b10efd146ef782b0a79d8e4f86"
     },
     {
       "path": "netlify/lib/approval-executor.js",
-      "sha256": "92d0f749ab773d79aa92cfd0131c3781292f87cc744047f48ffa9cc5180b2241"
+      "sha256": "75cc474900dfd6f0ccb363c8d52e815d3731423e68cc8b7ddc6e9d4004b4dee7"
     },
     {
       "path": "netlify/lib/private-worker-queue.js",
-      "sha256": "3eb41a3ef5421c80a87b99dfdcba8d1b766d7f38c5d215506cb354cfe8aa206f"
+      "sha256": "c832acdabb73c42a969157dc7e6a8b3aa766cdb77ff56beb1d955569d5702670"
     },
     {
       "path": "broker_gateway/private_worker.py",
-      "sha256": "4c1f6ed0b329f5bb9033f0e767338ae6db1fbc906af8e9d7b5b2cafab01ca774"
+      "sha256": "2484729fc6f5eac465d4bb15dc8251d331a0a52e857da66604bb92213bcb018d"
     }
   ],
   "releaseState": {

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "evidenceType": "DR_IMPLEMENTATION_EOL_ATTESTATION",
+  "candidateId": "AEGIS-DR-ROTATION-RC2-2026-08-31",
+  "strategyVersion": "DIVERSIFIED_DR_TREND_BUFFER_V1.0.0",
+  "frozenCommit": "c8a2d2d70fc7ec908d3bdfc7d6d3dc0049c2c1b4",
+  "path": "netlify/lib/diversified-allocation-research.js",
+  "legacyWorkingTreeSha256": "fd83131395b84fd0e0d055b8b6362a526ca10d44d6ddd31e0892973caaf60c7d",
+  "canonicalLfSha256": "b01037380a5780cb3aadc15332e0f4d377e4943e278f1e01e4b99f0d0ae66881",
+  "reason": "LEGACY_HASH_CAPTURED_MIXED_WINDOWS_LINE_ENDINGS",
+  "logicChanged": false,
+  "holdoutReopened": false,
+  "productionUnlocked": false
+}
