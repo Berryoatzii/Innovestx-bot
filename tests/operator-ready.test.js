@@ -56,6 +56,49 @@ test('classification summary distinguishes explicit REVIEW from unclassified pos
   assert.equal(summary.complete, false);
 });
 
+test('versioned policy classifications count as explicit while operator store wins', () => {
+  const { summarizeClassifications } = require('../netlify/lib/portfolio-classification-store');
+  const portfolio = [{ sym: 'AAA' }, { sym: 'BBB' }, { sym: 'CCC' }];
+  const map = {
+    BBB: { symbol: 'BBB', bucket: 'REVIEW', explicit: true },
+  };
+  const policy = {
+    classification: {
+      coreSymbols: ['AAA'],
+      activeSymbols: ['BBB'],
+      reviewSymbols: [],
+    },
+  };
+  const summary = summarizeClassifications(portfolio, map, policy);
+  assert.equal(summary.rows.find((item) => item.symbol === 'AAA').bucket, 'CORE');
+  assert.equal(summary.rows.find((item) => item.symbol === 'AAA').source, 'VERSIONED_POLICY');
+  assert.equal(summary.rows.find((item) => item.symbol === 'BBB').bucket, 'REVIEW');
+  assert.equal(summary.rows.find((item) => item.symbol === 'BBB').source, 'OPERATOR_STORE');
+  assert.equal(summary.counts.UNCLASSIFIED, 1);
+  assert.equal(summary.complete, false);
+});
+
+test('premarket policy explicitly classifies all 28 current portfolio symbols', () => {
+  const { loadPortfolioPolicy } = require('../netlify/lib/portfolio-policy');
+  const { summarizeClassifications } = require('../netlify/lib/portfolio-classification-store');
+  const symbols = [
+    'AIT', 'TPIPP', 'TMILL', 'TKS', 'TIPH', 'TCAP', 'TACC', 'SNC', 'SMPC', 'SAT',
+    'RJH', 'RATCH', 'PTL', 'PM', 'PDG', 'MFC', 'MBAX', 'LH', 'LALIN', 'KGI',
+    'IFS', 'ICN', 'GC', 'DRT', 'ASEFA', 'ARROW', 'TSC', 'WINNER',
+  ];
+  const summary = summarizeClassifications(
+    symbols.map((sym) => ({ sym })),
+    {},
+    loadPortfolioPolicy({}),
+  );
+  assert.equal(summary.rows.length, 28);
+  assert.equal(summary.counts.UNCLASSIFIED, 0);
+  assert.equal(summary.counts.ACTIVE, 5);
+  assert.equal(summary.counts.REVIEW, 23);
+  assert.equal(summary.counts.CORE, 0);
+  assert.equal(summary.complete, true);
+});
+
 test('BUY proposal sizing respects cash reserve, max value and board lot', () => {
   const { calculateBuyProposalQuantity } = require('../netlify/lib/order-intent-store');
   assert.equal(calculateBuyProposalQuantity({

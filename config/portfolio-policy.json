@@ -59,10 +59,42 @@
     "cash": "Tactical reserve inside the former 40% active sleeve; not forced into trades"
   },
   "classification": {
+    "version": "PREMARKET_2026-08-31_CONSERVATIVE_V1",
+    "asOf": "2026-08-31",
     "defaultBucket": "REVIEW",
     "coreSymbols": [],
-    "activeSymbols": [],
-    "reviewSymbols": []
+    "activeSymbols": [
+      "ASEFA",
+      "GC",
+      "SNC",
+      "TSC",
+      "WINNER"
+    ],
+    "reviewSymbols": [
+      "AIT",
+      "ARROW",
+      "DRT",
+      "ICN",
+      "IFS",
+      "KGI",
+      "LALIN",
+      "LH",
+      "MBAX",
+      "MFC",
+      "PDG",
+      "PM",
+      "PTL",
+      "RATCH",
+      "RJH",
+      "SAT",
+      "SMPC",
+      "TACC",
+      "TCAP",
+      "TIPH",
+      "TKS",
+      "TMILL",
+      "TPIPP"
+    ]
   },
   "core": {
     "maxPositionWeight": 0.12,

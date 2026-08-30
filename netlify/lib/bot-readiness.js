@@ -1,5 +1,6 @@
 const corePolicy = require('../../config/core-fundamental-policy.json');
 const { fetchBrokerPortfolio } = require('./broker-portfolio');
+const { loadPortfolioPolicy } = require('./portfolio-policy');
 const { classificationMap, summarizeClassifications } = require('./portfolio-classification-store');
 const { loadEffectivePortfolioPolicy } = require('./effective-portfolio-policy');
 const { listBacktestResults } = require('./research-results-store');
@@ -56,7 +57,7 @@ async function buildBotReadiness(event = {}) {
   }
 
   const map = await classificationMap(event);
-  const classification = summarizeClassifications(broker.portfolio, map);
+  const classification = summarizeClassifications(broker.portfolio, map, loadPortfolioPolicy());
   if (!classification.complete) blockers.push(`CLASSIFY_${classification.counts.UNCLASSIFIED}_POSITIONS`);
 
   const { policy } = await loadEffectivePortfolioPolicy(event);

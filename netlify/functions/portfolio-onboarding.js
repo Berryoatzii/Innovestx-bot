@@ -1,5 +1,6 @@
 const https = require('https');
 const { fetchBrokerPortfolio } = require('../lib/broker-portfolio');
+const { loadPortfolioPolicy } = require('../lib/portfolio-policy');
 const {
   classificationMap,
   savePortfolioSnapshot,
@@ -65,7 +66,7 @@ async function runOnboarding(event = {}, options = {}) {
   const broker = await fetchBrokerPortfolio(event);
   await savePortfolioSnapshot(broker.portfolio, broker.cash, event);
   const map = await classificationMap(event);
-  const summary = summarizeClassifications(broker.portfolio, map);
+  const summary = summarizeClassifications(broker.portfolio, map, loadPortfolioPolicy());
   const batchSize = Math.max(1, Math.min(10, Number(options.batchSize || process.env.ONBOARDING_BATCH_SIZE || 5)));
   const pending = summary.rows.filter((item) => !item.explicit).slice(0, batchSize);
 

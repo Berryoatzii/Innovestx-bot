@@ -131,15 +131,25 @@ async function getPortfolioSnapshot(event) {
   return store.get(SNAPSHOT_KEY, { type: 'json' });
 }
 
-function summarizeClassifications(portfolio, map) {
+function configuredBucket(symbol, policy) {
+  if (!policy?.classification) return null;
+  if ((policy.classification.coreSymbols || []).includes(symbol)) return 'CORE';
+  if ((policy.classification.activeSymbols || []).includes(symbol)) return 'ACTIVE';
+  if ((policy.classification.reviewSymbols || []).includes(symbol)) return 'REVIEW';
+  return null;
+}
+
+function summarizeClassifications(portfolio, map, policy = null) {
   const rows = (Array.isArray(portfolio) ? portfolio : []).map((item) => {
     const symbol = normalizeSymbol(item.sym || item.symbol);
-    const explicit = map?.[symbol] || null;
+    const stored = map?.[symbol] || null;
+    const fromPolicy = configuredBucket(symbol, policy);
     const suggestion = suggestBucket(symbol);
     return {
       symbol,
-      bucket: explicit?.bucket || 'REVIEW',
-      explicit: Boolean(explicit?.explicit),
+      bucket: stored?.bucket || fromPolicy || 'REVIEW',
+      explicit: Boolean(stored?.explicit || fromPolicy),
+      source: stored?.explicit ? 'OPERATOR_STORE' : fromPolicy ? 'VERSIONED_POLICY' : 'UNCLASSIFIED_DEFAULT',
       suggestedBucket: suggestion.bucket,
     };
   });
@@ -163,4 +173,5 @@ module.exports = {
   savePortfolioSnapshot,
   getPortfolioSnapshot,
   summarizeClassifications,
+  _test: { configuredBucket },
 };
