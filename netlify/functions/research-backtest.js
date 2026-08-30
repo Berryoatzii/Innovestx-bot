@@ -44,7 +44,7 @@ async function runResearchBacktests(event = {}, options = {}) {
   const { policy } = await loadEffectivePortfolioPolicy(event);
   const symbols = options.symbols?.length
     ? options.symbols.map((item) => String(item).toUpperCase())
-    : policy.classification.activeSymbols || [];
+    : policy.research?.shadowSymbols || policy.classification.activeSymbols || [];
   const results = [];
 
   if (symbols.length === 0) {

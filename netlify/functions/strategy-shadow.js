@@ -101,7 +101,7 @@ async function runStrategyShadow(event = {}, options = {}) {
   const broker = await fetchBrokerPortfolio(event);
   const segmented = segmentPortfolio(broker.portfolio, policy);
   const allocation = summarizeAllocation(segmented, broker.cash, policy);
-  const activeSymbols = policy.classification.activeSymbols || [];
+  const activeSymbols = policy.research?.shadowSymbols || policy.classification.activeSymbols || [];
   const initialCapital = Number(process.env.SHADOW_INITIAL_CAPITAL || 100000);
   const shadowRecord = await getShadowState(event, initialCapital);
   let shadowState = shadowRecord.data;

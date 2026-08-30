@@ -63,17 +63,13 @@
     "asOf": "2026-08-31",
     "defaultBucket": "REVIEW",
     "coreSymbols": [],
-    "activeSymbols": [
-      "ASEFA",
-      "GC",
-      "SNC",
-      "TSC",
-      "WINNER"
-    ],
+    "activeSymbols": [],
     "reviewSymbols": [
       "AIT",
       "ARROW",
+      "ASEFA",
       "DRT",
+      "GC",
       "ICN",
       "IFS",
       "KGI",
@@ -88,12 +84,15 @@
       "RJH",
       "SAT",
       "SMPC",
+      "SNC",
       "TACC",
       "TCAP",
       "TIPH",
       "TKS",
       "TMILL",
-      "TPIPP"
+      "TPIPP",
+      "TSC",
+      "WINNER"
     ]
   },
   "core": {
@@ -155,6 +154,15 @@
     "allowOrders": false
   },
   "research": {
+    "shadowUniverseVersion": "FORWARD_ONLY_RC1_2026-08-31",
+    "shadowSymbols": [
+      "AIT",
+      "BANPU",
+      "BCP",
+      "COM7",
+      "TKS"
+    ],
+    "shadowSelectionRule": "FULL_SAMPLE_STRESS_PASS_BUT_RECENT_HOLDOUT_NOT_PASS; RESEARCH_ONLY; NEVER_ORDER_ELIGIBLE_BY_MEMBERSHIP",
     "minimumBars": 220,
     "minimumShadowTradingDays": 20,
     "minimumDecisionEvents": 100,

@@ -63,18 +63,19 @@ async function buildBotReadiness(event = {}) {
   const { policy } = await loadEffectivePortfolioPolicy(event);
   const activeSymbols = policy.classification.activeSymbols || [];
   const coreSymbols = policy.classification.coreSymbols || [];
+  const researchSymbols = policy.research?.shadowSymbols || activeSymbols;
 
   const backtests = await listBacktestResults(event);
   const backtestMap = Object.fromEntries(backtests.map((item) => [item.symbol, item]));
-  const activeResearch = activeSymbols.map((symbol) => ({
+  const activeResearch = researchSymbols.map((symbol) => ({
     symbol,
     exists: Boolean(backtestMap[symbol]),
     passed: Boolean(backtestMap[symbol]?.gate?.passed),
     recordedAt: backtestMap[symbol]?.recordedAt || null,
   }));
   const activePassed = activeResearch.filter((item) => item.passed).length;
-  if (activeSymbols.length === 0) blockers.push('NO_ACTIVE_SYMBOLS');
-  if (activeSymbols.length > 0 && activePassed === 0) blockers.push('NO_ACTIVE_BACKTEST_PASSED');
+  if (researchSymbols.length === 0) blockers.push('NO_SHADOW_RESEARCH_SYMBOLS');
+  if (researchSymbols.length > 0 && activePassed === 0) blockers.push('NO_ACTIVE_BACKTEST_PASSED');
 
   const reports = await listDailyReports(event, 400);
   const shadowGate = evaluateShadowGate(reports, {
@@ -110,7 +111,7 @@ async function buildBotReadiness(event = {}) {
     brokerConnected,
     telegramReady,
     classificationComplete: classification.complete,
-    hasResearchSymbols: activeSymbols.length + coreSymbols.length > 0,
+    hasResearchSymbols: researchSymbols.length + coreSymbols.length > 0,
     activePassed,
     shadowPassed: shadowGate.passed,
     approvalReady: approval.ready,
@@ -132,6 +133,7 @@ async function buildBotReadiness(event = {}) {
     policy: {
       coreSymbols,
       activeSymbols,
+      researchSymbols,
       reviewSymbols: policy.classification.reviewSymbols || [],
       targets: policy.targets,
     },
@@ -142,7 +144,7 @@ async function buildBotReadiness(event = {}) {
     },
     activeResearch: {
       passed: activePassed,
-      total: activeSymbols.length,
+      total: researchSymbols.length,
       rows: activeResearch,
     },
     shadowGate,

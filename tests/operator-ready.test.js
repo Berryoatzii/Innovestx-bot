@@ -93,10 +93,24 @@ test('premarket policy explicitly classifies all 28 current portfolio symbols', 
   );
   assert.equal(summary.rows.length, 28);
   assert.equal(summary.counts.UNCLASSIFIED, 0);
-  assert.equal(summary.counts.ACTIVE, 5);
-  assert.equal(summary.counts.REVIEW, 23);
+  assert.equal(summary.counts.ACTIVE, 0);
+  assert.equal(summary.counts.REVIEW, 28);
   assert.equal(summary.counts.CORE, 0);
   assert.equal(summary.complete, true);
+});
+
+test('shadow research universe never makes a symbol order-eligible', () => {
+  const { loadPortfolioPolicy, classifySymbol, orderEligibility } = require('../netlify/lib/portfolio-policy');
+  const policy = loadPortfolioPolicy({});
+  assert.equal(policy.research.shadowSymbols.length, 5);
+  assert.equal(policy.research.shadowSymbols.includes('BANPU'), true);
+  assert.equal(classifySymbol('BANPU', policy), 'REVIEW');
+  assert.deepEqual(orderEligibility({
+    symbol: 'BANPU',
+    action: 'BUY_CANDIDATE',
+    evidence: { rulesPassed: true, corporateActionClear: true, cashReserveMaintained: true },
+    policy,
+  }), { eligible: false, bucket: 'REVIEW', reason: 'REVIEW_BUCKET_NO_ORDERS' });
 });
 
 test('BUY proposal sizing respects cash reserve, max value and board lot', () => {

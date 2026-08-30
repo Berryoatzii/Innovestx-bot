@@ -1,5 +1,7 @@
 # คำขออนุมัติ Strategy/Logic/Parameters — AEGIS RC1
 
+> **HOLD — ห้ามส่ง ณ 31 ส.ค. 2569:** Candidate นี้ยังไม่ผ่าน recent holdout ทั้งในพอร์ต 28 ตัวและ SET50 H2/2569 จึงยังไม่ eligible สำหรับส่งขออนุมัติบริษัทสมาชิก เอกสารส่วนอีเมลด้านล่างเป็นเพียง draft จนกว่า research และ forward-shadow gates จะผ่าน
+
 เอกสารนี้ไม่มีเลขบัญชี, App ID, Secret, PIN หรือ Token และไม่ใช่คำสั่งซื้อขาย
 
 ## ขอบเขตที่ขอให้ InnovestX ยืนยัน
