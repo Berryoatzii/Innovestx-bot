@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "candidateId": "AEGIS-MOMENTUM-BREAKOUT-RC1-2026-08-31",
+  "strategyVersion": "MOMENTUM_BREAKOUT_V1.0.0",
+  "approvalStatus": "PENDING_MEMBER_APPROVAL",
+  "approvalScope": {
+    "member": "InnovestX Securities",
+    "market": "THAI_EQUITY",
+    "accountType": "CASH_BALANCE",
+    "longOnly": true,
+    "shortSelling": false,
+    "derivatives": false,
+    "leverage": false,
+    "continuousAutomation": false,
+    "humanApprovalPerOrder": true
+  },
+  "signalLogic": {
+    "minimumDailyBars": 220,
+    "maximumDailyDataAgeDays": 7,
+    "benchmarkRegime": "BENCHMARK_CLOSE_ABOVE_EMA200",
+    "trend": "CLOSE_ABOVE_EMA20_AND_EMA20_ABOVE_EMA50",
+    "breakout": "CLOSE_ABOVE_PRIOR_20_DAY_HIGH",
+    "minimumVolumeRatio20Day": 1.2,
+    "rsi14Minimum": 55,
+    "rsi14Maximum": 75,
+    "maximumExtensionFromEma20Atr": 2.5,
+    "exitReview": [
+      "CLOSE_BELOW_EMA20",
+      "CLOSE_BELOW_HIGHEST_CLOSE20_MINUS_2_ATR"
+    ]
+  },
+  "portfolioAndRiskParameters": {
+    "activeSleeveTargetWeight": 0.2,
+    "minimumCashTargetWeight": 0.2,
+    "maximumActivePositionWeight": 0.05,
+    "maximumActivePositions": 4,
+    "riskPerTradeWeight": 0.005,
+    "minimumRewardToRiskAfterCosts": 2,
+    "maximumPilotOrderValueTHB": 3500,
+    "maximumOrdersPerDay": 1,
+    "maximumDailyNotionalTHB": 3500,
+    "minimumPostTradeCashTHB": 5000
+  },
+  "orderAndExecutionControls": {
+    "orderType": "RESTING_LIMIT_ONLY",
+    "marketOrdersAllowed": false,
+    "auctionOrdersAllowed": false,
+    "fullPositionExitAllowed": false,
+    "approvalBindsSymbolSideQuantityAndPrice": true,
+    "approvalExpires": true,
+    "duplicateOpenOrderBlocked": true,
+    "maximumSpreadWeight": 0.03,
+    "maximumRestingLimitDistanceWeight": 0.15,
+    "oneOrderKillSwitch": true,
+    "automaticBrokerRetry": false,
+    "uncertainOutcomePolicy": "RECONCILE_ONLY"
+  },
+  "releaseConditions": {
+    "accountLevelOpenApiActivationRequired": true,
+    "memberStrategyApprovalRequired": true,
+    "shadowMinimumTradingDays": 20,
+    "shadowMinimumDecisionEvents": 100,
+    "shadowMinimumTradeEvents": 10,
+    "shadowMaximumDrawdown": -0.1,
+    "shadowMinimumAfterCostReturn": 0,
+    "shadowMinimumBenchmarkExcessReturn": 0,
+    "productionReadOnlyVerificationRequired": true,
+    "zeroUnresolvedRequired": true,
+    "telegramHumanApprovalRequired": true,
+    "strategyReleaseApproved": false,
+    "liveTradingEnabled": false
+  },
+  "privacy": {
+    "containsAccountIdentifier": false,
+    "containsCredential": false,
+    "containsPin": false,
+    "containsToken": false
+  }
+}
