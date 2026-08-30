@@ -177,6 +177,8 @@ test('release evidence requires every safety proof and matching audited deployme
     productionReadOnlyVerified: true,
     zeroUnresolvedVerified: true,
     strategyReleaseApproved: true,
+    executionCompatibilityVerified: true,
+    forwardShadowVerified: true,
     pilotCapitalEvidence,
     deployedCommit: 'abc1234',
     auditedCommit: 'abc1234',

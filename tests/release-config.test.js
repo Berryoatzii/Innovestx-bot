@@ -7,6 +7,8 @@ test('checked-in release config is always fail-closed', () => {
   const config = loadReleaseConfig({});
   assert.equal(config.brokerPermissionConfirmed, false);
   assert.equal(config.productionReadOnlyVerified, false);
+  assert.equal(config.executionCompatibilityVerified, false);
+  assert.equal(config.forwardShadowVerified, false);
   assert.deepEqual(config.evidenceRefs, {});
 });
 

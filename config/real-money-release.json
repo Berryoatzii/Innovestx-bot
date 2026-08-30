@@ -23,6 +23,8 @@
   "humanApprovalVerified": false,
   "oneOrderKillSwitchVerified": false,
   "strategyReleaseApproved": false,
+  "executionCompatibilityVerified": false,
+  "forwardShadowVerified": false,
   "pilotCapitalEvidence": {
     "capital": null,
     "price": null,

@@ -131,6 +131,12 @@ def _canonical(payload: Mapping[str, Any]) -> str:
         f"{float(payload.get('price', 0)):.4f}",
         str(payload.get("orderStyle", "")).upper(),
         str(payload.get("expiresAt", "")),
+        str(int(payload.get("portfolioQty", 0))),
+        str(int(payload.get("boardLot", 0))),
+        str(payload.get("instrumentType", "")).upper(),
+        str(payload.get("exitMode", "")).upper(),
+        str(payload.get("candidateId", "")),
+        str(payload.get("strategyVersion", "")),
     ])
 
 
@@ -203,6 +209,21 @@ def _positive(value: Any) -> float:
     return number if math.isfinite(number) and number > 0 else 0
 
 
+def _candidate_dr_allowed(values: Mapping[str, str], payload: Mapping[str, Any]) -> bool:
+    allowed_symbols = {
+        symbol.strip().upper()
+        for symbol in str(values.get("BROKER_ALLOWED_DR_SYMBOLS", "")).split(",")
+        if symbol.strip()
+    }
+    return (
+        str(payload.get("instrumentType", "")).upper() == "DR"
+        and str(payload.get("candidateId", "")) == str(values.get("BROKER_ALLOWED_CANDIDATE_ID", ""))
+        and str(payload.get("strategyVersion", "")) == str(values.get("BROKER_ALLOWED_STRATEGY_VERSION", ""))
+        and str(payload.get("symbol", "")).upper() in allowed_symbols
+        and int(payload.get("boardLot", 0)) == 1
+    )
+
+
 def preflight(values: Mapping[str, str], payload: Mapping[str, Any]) -> dict[str, Any]:
     health = _gateway(values, "GET", "/v1/health")
     if health.get("ready") is not True or int(health.get("unresolvedOperations", 0) or 0) != 0:
@@ -229,7 +250,9 @@ def preflight(values: Mapping[str, str], payload: Mapping[str, Any]) -> dict[str
         raise WorkerError("SPREAD_TOO_WIDE")
     price = _positive(payload.get("price"))
     quantity = int(payload.get("quantity", 0))
-    board_lot = int(values.get("BROKER_BOARD_LOT", "100") or 100)
+    board_lot = int(payload.get("boardLot", 0) or 0)
+    if board_lot <= 0:
+        raise WorkerError("BOARD_LOT_INVALID")
     if quantity <= 0 or quantity % board_lot:
         raise WorkerError("BOARD_LOT_REQUIRED")
     if abs(price - last) / last > float(values.get("MAX_RESTING_LIMIT_DISTANCE_PCT", "0.15")):
@@ -237,7 +260,25 @@ def preflight(values: Mapping[str, str], payload: Mapping[str, Any]) -> dict[str
     value = quantity * price
     if value > float(values.get("BROKER_MAX_ORDER_VALUE", "0") or 0):
         raise WorkerError("ORDER_VALUE_LIMIT")
-    if str(payload.get("side", "")).upper() == "BUY":
+    side = str(payload.get("side", "")).upper()
+    if str(payload.get("instrumentType", "")).upper() == "DR" and not _candidate_dr_allowed(values, payload):
+        raise WorkerError("DR_CANDIDATE_SCOPE_INVALID")
+    if side == "SELL":
+        positions = account.get("portfolio") if isinstance(account.get("portfolio"), list) else []
+        position = next((item for item in positions if str(item.get("sym", "")).upper() == symbol), None)
+        held = int(float(position.get("qty", 0) or 0)) if isinstance(position, Mapping) else 0
+        if held <= 0 or quantity > held:
+            raise WorkerError("SELL_POSITION_INVALID")
+        if str(payload.get("exitMode", "")).upper() == "FULL_POSITION":
+            if not _candidate_dr_allowed(values, payload):
+                raise WorkerError("FULL_EXIT_CANDIDATE_SCOPE_INVALID")
+            if quantity != held or int(payload.get("portfolioQty", 0)) != held:
+                raise WorkerError("FULL_EXIT_FRESH_QUANTITY_MISMATCH")
+        else:
+            max_fraction = float(values.get("MAX_LIVE_POSITION_FRACTION", "0.25") or 0.25)
+            if quantity >= held or quantity > math.floor(held * max_fraction):
+                raise WorkerError("POSITION_FRACTION_LIMIT_EXCEEDED")
+    if side == "BUY":
         cash = _positive(account.get("cash"))
         reserve = float(values.get("MIN_LIVE_CASH_RESERVE", "5000") or 5000)
         if cash - value * 1.01 < reserve:

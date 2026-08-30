@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { openBlobStore } = require('./blob-runtime');
+const { isCandidateDrFullExit } = require('./candidate-dr-controls');
 
 const STORE_NAME = 'order-intents-v1';
 const INTENT_PREFIX = 'intent/';
@@ -95,12 +96,33 @@ function buildIntent(input, options = {}) {
   const quantity = Math.floor(Number(input.quantity || input.qty || 0));
   const proposedPrice = Number(input.proposedPrice || input.price || input.mkt || 0);
   const portfolioQty = Math.max(0, Math.floor(Number(input.portfolioQty || input.positionQty || 0)));
+  const instrumentType = String(input.instrumentType || 'EQUITY').trim().toUpperCase();
+  const exitMode = String(input.exitMode || 'PARTIAL_ONLY').trim().toUpperCase();
+  const boardLot = Math.floor(Number(input.boardLot || (instrumentType === 'DR' ? 1 : 100)));
+  const candidateId = String(input.candidateId || '').trim();
   const id = intentIdFromKey(input.idempotencyKey);
 
   if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('INVALID_QUANTITY');
   if (!Number.isFinite(proposedPrice) || proposedPrice <= 0) throw new Error('INVALID_PRICE');
   if (!Number.isFinite(portfolioQty) || portfolioQty < 0) throw new Error('INVALID_PORTFOLIO_QUANTITY');
-  if (side === 'SELL' && portfolioQty <= quantity) throw new Error('FULL_POSITION_EXIT_NOT_ALLOWED');
+  if (!Number.isInteger(boardLot) || boardLot <= 0 || quantity % boardLot !== 0) throw new Error('INVALID_BOARD_LOT');
+  const intentShape = {
+    symbol,
+    side,
+    orderStyle,
+    quantity,
+    portfolioQty,
+    portfolioBucket: input.portfolioBucket || 'REVIEW',
+    strategyVersion: input.strategyVersion || 'RULES_PROPOSAL_V1',
+    candidateId,
+    instrumentType,
+    exitMode,
+    boardLot,
+  };
+  if (side === 'SELL' && quantity > portfolioQty) throw new Error('SELL_QUANTITY_EXCEEDS_POSITION');
+  if (side === 'SELL' && portfolioQty === quantity && !isCandidateDrFullExit(intentShape, portfolioQty)) {
+    throw new Error('FULL_POSITION_EXIT_NOT_ALLOWED');
+  }
 
   return {
     schemaVersion: 3,
@@ -114,8 +136,12 @@ function buildIntent(input, options = {}) {
     proposedPrice,
     estimatedValue: Number((quantity * proposedPrice).toFixed(2)),
     portfolioQty,
-    portfolioBucket: input.portfolioBucket || 'REVIEW',
-    strategyVersion: input.strategyVersion || 'RULES_PROPOSAL_V1',
+    portfolioBucket: intentShape.portfolioBucket,
+    strategyVersion: intentShape.strategyVersion,
+    candidateId,
+    instrumentType,
+    exitMode,
+    boardLot,
     runId: input.runId || null,
     reasonCode: input.reasonCode || 'RULES_SIGNAL',
     reason: String(input.reason || '').slice(0, 1000),

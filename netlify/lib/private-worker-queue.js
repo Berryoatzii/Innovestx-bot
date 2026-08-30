@@ -51,6 +51,12 @@ function workerPayload(intent, claimId) {
     expiresAt: intent.expiresAt,
     portfolioBucket: intent.portfolioBucket,
     decisionAuthority: intent.decisionAuthority,
+    portfolioQty: intent.portfolioQty,
+    boardLot: intent.boardLot,
+    instrumentType: intent.instrumentType,
+    exitMode: intent.exitMode,
+    candidateId: intent.candidateId,
+    strategyVersion: intent.strategyVersion,
   };
 }
 
@@ -64,6 +70,12 @@ function canonicalWorkerPayload(payload = {}) {
     Number(payload.price || 0).toFixed(4),
     String(payload.orderStyle || '').toUpperCase(),
     String(payload.expiresAt || ''),
+    String(Math.floor(Number(payload.portfolioQty || 0))),
+    String(Math.floor(Number(payload.boardLot || 0))),
+    String(payload.instrumentType || '').toUpperCase(),
+    String(payload.exitMode || '').toUpperCase(),
+    String(payload.candidateId || ''),
+    String(payload.strategyVersion || ''),
   ].join('|');
 }
 

@@ -11,6 +11,8 @@ const REQUIRED_BOOLEAN_EVIDENCE = [
   'productionReadOnlyVerified',
   'zeroUnresolvedVerified',
   'strategyReleaseApproved',
+  'executionCompatibilityVerified',
+  'forwardShadowVerified',
 ];
 
 const COMMON_FILE_BACKED_EVIDENCE = [
@@ -23,6 +25,8 @@ const COMMON_FILE_BACKED_EVIDENCE = [
 const FULL_RELEASE_FILE_BACKED_EVIDENCE = [
   ...COMMON_FILE_BACKED_EVIDENCE,
   'strategyReleaseApproved',
+  'executionCompatibilityVerified',
+  'forwardShadowVerified',
 ];
 
 function verifyEvidenceRef(reference = {}, root = path.resolve(__dirname, '../..')) {
@@ -92,6 +96,61 @@ function verifyStrategyApprovalEvidence(reference = {}, root = path.resolve(__di
   }
 }
 
+function currentCandidateIdentity(root = path.resolve(__dirname, '../..')) {
+  const candidatePath = path.resolve(root, 'config/strategy-approval-candidate.json');
+  const candidateBytes = fs.readFileSync(candidatePath);
+  const candidate = JSON.parse(candidateBytes.toString('utf8'));
+  return {
+    candidate,
+    candidateSha256: crypto.createHash('sha256').update(candidateBytes).digest('hex'),
+  };
+}
+
+function verifyExecutionCompatibilityEvidence(reference = {}, root = path.resolve(__dirname, '../..')) {
+  const evidence = loadVerifiedEvidenceJson(reference, root);
+  if (!evidence) return false;
+  try {
+    const { candidate, candidateSha256 } = currentCandidateIdentity(root);
+    return evidence.evidenceType === 'DR_EXECUTION_COMPATIBILITY'
+      && evidence.passed === true
+      && evidence.candidateId === candidate.candidateId
+      && evidence.strategyVersion === candidate.strategyVersion
+      && evidence.candidateSha256 === candidateSha256
+      && evidence.restingLimitOnlyVerified === true
+      && evidence.perOrderBoardLotVerified === true
+      && evidence.freshFullExitQuantityVerified === true
+      && evidence.privateWorkerPayloadBound === true
+      && evidence.candidateDrScopeVerified === true
+      && evidence.productionLockedDuringVerification === true
+      && evidence.brokerCalled === false
+      && evidence.moneyMoving === false;
+  } catch {
+    return false;
+  }
+}
+
+function verifyForwardShadowEvidence(reference = {}, root = path.resolve(__dirname, '../..')) {
+  const evidence = loadVerifiedEvidenceJson(reference, root);
+  if (!evidence) return false;
+  try {
+    const { candidate, candidateSha256 } = currentCandidateIdentity(root);
+    return evidence.evidenceType === 'DR_FORWARD_SHADOW'
+      && evidence.passed === true
+      && evidence.candidateId === candidate.candidateId
+      && evidence.strategyVersion === candidate.strategyVersion
+      && evidence.candidateSha256 === candidateSha256
+      && Number(evidence.tradingDays) >= 20
+      && Number(evidence.instrumentDecisionEvents) >= 6
+      && Number(evidence.rebalanceEvents) >= 1
+      && Number(evidence.dataErrors) === 0
+      && evidence.brokerCalled === false
+      && evidence.orderIntentCreated === false
+      && evidence.moneyMoving === false;
+  } catch {
+    return false;
+  }
+}
+
 function runtimeCommitEvidence(input = {}, options = {}) {
   return {
     deployedCommit: String(
@@ -115,6 +174,10 @@ function evaluateReleaseEvidence(input = {}, options = {}) {
       && verifyBrokerPermissionEvidence(input.evidenceRefs?.brokerPermissionConfirmed);
     checks.strategyReleaseApproved = checks.strategyReleaseApproved
       && verifyStrategyApprovalEvidence(input.evidenceRefs?.strategyReleaseApproved);
+    checks.executionCompatibilityVerified = checks.executionCompatibilityVerified
+      && verifyExecutionCompatibilityEvidence(input.evidenceRefs?.executionCompatibilityVerified);
+    checks.forwardShadowVerified = checks.forwardShadowVerified
+      && verifyForwardShadowEvidence(input.evidenceRefs?.forwardShadowVerified);
   }
   const commitEvidence = runtimeCommitEvidence(input, options);
   const privateWorker = evaluatePrivateWorkerReadiness(
@@ -226,5 +289,7 @@ module.exports = {
   verifyEvidenceRef,
   verifyBrokerPermissionEvidence,
   verifyStrategyApprovalEvidence,
+  verifyExecutionCompatibilityEvidence,
+  verifyForwardShadowEvidence,
   runtimeCommitEvidence,
 };

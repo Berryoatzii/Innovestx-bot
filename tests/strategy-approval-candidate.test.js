@@ -5,34 +5,43 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const candidate = require('../config/strategy-approval-candidate.json');
-const policy = require('../config/portfolio-policy.json');
-const { RULE_VERSION } = require('../netlify/lib/deterministic-strategy');
+const frozen = require('../config/dr-strategy-research-candidate-rc2.json');
+const finalHoldout = require('../config/dr-strategy-final-holdout-rc2.json');
+const universe = require('../config/research-universe-dr-pilot-2026.json');
 
-test('member approval candidate is bound to the implemented deterministic strategy', () => {
-  assert.equal(candidate.strategyVersion, RULE_VERSION);
-  assert.equal(candidate.signalLogic.minimumDailyBars, policy.research.minimumBars);
-  assert.equal(candidate.portfolioAndRiskParameters.activeSleeveTargetWeight, policy.targets.ACTIVE);
-  assert.equal(candidate.portfolioAndRiskParameters.minimumCashTargetWeight, policy.targets.CASH);
-  assert.equal(candidate.portfolioAndRiskParameters.maximumActivePositionWeight, policy.active.maxPositionWeight);
-  assert.equal(candidate.portfolioAndRiskParameters.maximumActivePositions, policy.active.maxPositions);
-  assert.equal(candidate.portfolioAndRiskParameters.riskPerTradeWeight, policy.active.riskPerTradePct);
-  assert.equal(
-    candidate.portfolioAndRiskParameters.minimumRewardToRiskAfterCosts,
-    policy.active.minimumRewardToRiskAfterCosts,
-  );
-  assert.equal(candidate.releaseConditions.shadowMinimumTradingDays, policy.research.minimumShadowTradingDays);
-  assert.equal(candidate.releaseConditions.shadowMinimumDecisionEvents, policy.research.minimumDecisionEvents);
-  assert.equal(candidate.releaseConditions.shadowMinimumTradeEvents, policy.research.minimumShadowTradeEvents);
+function hashFile(relativePath) {
+  return crypto.createHash('sha256')
+    .update(fs.readFileSync(path.resolve(__dirname, '..', relativePath)))
+    .digest('hex');
+}
+
+test('member approval candidate is bound to frozen RC2 logic and final holdout evidence', () => {
+  assert.equal(candidate.candidateId, frozen.candidateId);
+  assert.equal(candidate.strategyVersion, frozen.strategyVersion);
+  assert.equal(candidate.researchEvidence.frozenCandidate.sha256, hashFile(candidate.researchEvidence.frozenCandidate.path));
+  assert.equal(candidate.researchEvidence.finalHoldout.sha256, hashFile(candidate.researchEvidence.finalHoldout.path));
+  assert.equal(candidate.researchEvidence.finalHoldout.passed, true);
+  assert.equal(finalHoldout.passed, true);
+  assert.equal(candidate.signalLogic.momentumMonths, frozen.signalLogic.momentumMonths);
+  assert.equal(candidate.signalLogic.retentionRank, frozen.signalLogic.retentionRank);
+  assert.equal(candidate.signalLogic.maximumSelected, frozen.signalLogic.maximumSelected);
+  assert.equal(candidate.approvalScope.symbols.length, universe.instruments.length);
+  assert.deepEqual(candidate.approvalScope.symbols, universe.instruments.map((item) => item.symbol));
 });
 
-test('candidate remains fail-closed and cannot imply approval or live trading', () => {
+test('candidate remains fail-closed and scopes full exits to candidate DR positions', () => {
   assert.equal(candidate.approvalStatus, 'PENDING_MEMBER_APPROVAL');
   assert.equal(candidate.approvalScope.humanApprovalPerOrder, true);
   assert.equal(candidate.approvalScope.continuousAutomation, false);
+  assert.deepEqual(candidate.approvalScope.requestedPermissions, { place: true, change: true, cancel: true });
   assert.equal(candidate.orderAndExecutionControls.orderType, 'RESTING_LIMIT_ONLY');
   assert.equal(candidate.orderAndExecutionControls.marketOrdersAllowed, false);
   assert.equal(candidate.orderAndExecutionControls.auctionOrdersAllowed, false);
+  assert.equal(candidate.orderAndExecutionControls.fullPositionExitAllowed, true);
+  assert.equal(candidate.orderAndExecutionControls.fullPositionExitScope, 'CANDIDATE_DR_POSITIONS_ONLY');
   assert.equal(candidate.orderAndExecutionControls.automaticBrokerRetry, false);
+  assert.equal(candidate.releaseConditions.executionCompatibilityEvidenceRequired, true);
+  assert.equal(candidate.releaseConditions.forwardShadowEvidenceRequired, true);
   assert.equal(candidate.releaseConditions.strategyReleaseApproved, false);
   assert.equal(candidate.releaseConditions.liveTradingEnabled, false);
 });
@@ -46,18 +55,18 @@ test('candidate carries no account or credential material', () => {
   });
   const serialized = JSON.stringify(candidate);
   assert.equal(
-    /"(?:appId|appSecret|accountNo|accountNumber|pin|token|privateKey)"\s*:\s*"[^"]+"/i.test(serialized),
+    /\"(?:appId|appSecret|accountNo|accountNumber|pin|token|privateKey)\"\s*:\s*\"[^\"]+\"/i.test(serialized),
     false,
   );
 });
 
-test('approval request is bound to the exact candidate hash', () => {
+test('approval request is bound to the exact RC2 candidate hash', () => {
   const candidatePath = path.resolve(__dirname, '../config/strategy-approval-candidate.json');
   const requestPath = path.resolve(__dirname, '../docs/AEGIS_STRATEGY_APPROVAL_REQUEST_TH.md');
   const hash = crypto.createHash('sha256').update(fs.readFileSync(candidatePath)).digest('hex');
   const request = fs.readFileSync(requestPath, 'utf8');
 
-  assert.equal(hash, '9ec7197a1899cdfa4ea9d6fdc847a0a9a926d06c039f40af0ee90d281cc2dae1');
+  assert.equal(hash, '609a4773b6a9f8bd93e103ba3cd36fa310402adcec4e82d27a187511d4262059');
   assert.equal(request.includes(hash), true);
   assert.equal(request.includes(candidate.candidateId), true);
   assert.equal(request.includes(candidate.strategyVersion), true);

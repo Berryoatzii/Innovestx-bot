@@ -36,6 +36,12 @@ class PrivateWorkerTests(unittest.TestCase):
             "price": 2.90,
             "orderStyle": "RESTING_LIMIT",
             "expiresAt": "2026-08-26T10:00:00Z",
+            "portfolioQty": 0,
+            "boardLot": 100,
+            "instrumentType": "EQUITY",
+            "exitMode": "PARTIAL_ONLY",
+            "candidateId": "",
+            "strategyVersion": "RULES_PROPOSAL_V1",
         }
 
     def test_dry_run_requires_production_read_only(self):
@@ -95,6 +101,46 @@ class PrivateWorkerTests(unittest.TestCase):
         self.assertEqual(preflight(self.base_values(), self.payload()), {
             "symbol": "TTB", "side": "BUY", "quantity": 100, "price": 2.90,
         })
+
+    @patch("private_worker._gateway")
+    def test_preflight_allows_only_fresh_full_exit_for_exact_dr_candidate(self, gateway):
+        values = {
+            **self.base_values(),
+            "BROKER_ALLOWED_CANDIDATE_ID": "AEGIS-DR-ROTATION-RC2-2026-08-31",
+            "BROKER_ALLOWED_STRATEGY_VERSION": "DIVERSIFIED_DR_TREND_BUFFER_V1.0.0",
+            "BROKER_ALLOWED_DR_SYMBOLS": "SP50001,NDX01,INDIA01,CN01,BONDUS01,GOLDUS03",
+        }
+        payload = {
+            **self.payload(),
+            "symbol": "SP50001",
+            "side": "SELL",
+            "quantity": 7,
+            "portfolioQty": 7,
+            "boardLot": 1,
+            "instrumentType": "DR",
+            "exitMode": "FULL_POSITION",
+            "candidateId": values["BROKER_ALLOWED_CANDIDATE_ID"],
+            "strategyVersion": values["BROKER_ALLOWED_STRATEGY_VERSION"],
+        }
+        gateway.side_effect = [
+            {"ready": True, "unresolvedOperations": 0},
+            {"operations": []},
+            {"cashVerified": True, "cash": 10000, "orders": [], "portfolio": [{"sym": "SP50001", "qty": 7}]},
+            {"quote": {"marketStatus": "Open2", "last": 34.75, "bid": 34.50, "ask": 34.75}},
+        ]
+        self.assertEqual(preflight(values, {**payload, "price": 34.50}), {
+            "symbol": "SP50001", "side": "SELL", "quantity": 7, "price": 34.50,
+        })
+
+        gateway.reset_mock()
+        gateway.side_effect = [
+            {"ready": True, "unresolvedOperations": 0},
+            {"operations": []},
+            {"cashVerified": True, "cash": 10000, "orders": [], "portfolio": [{"sym": "SP50001", "qty": 8}]},
+            {"quote": {"marketStatus": "Open2", "last": 34.75, "bid": 34.50, "ask": 34.75}},
+        ]
+        with self.assertRaisesRegex(WorkerError, "FULL_EXIT_FRESH_QUANTITY_MISMATCH"):
+            preflight(values, {**payload, "price": 34.50})
 
 
 if __name__ == "__main__":

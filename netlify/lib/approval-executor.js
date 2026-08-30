@@ -6,6 +6,7 @@ const { normalizeBrokerOrderState, isBrokerOrderTerminal } = require('./broker-o
 const { reserveOperationalPilotAttempt } = require('./operational-pilot-lock');
 const { queueApprovedIntent } = require('./private-worker-queue');
 const { loadReleaseConfig } = require('./release-config');
+const { isCandidateDrFullExit } = require('./candidate-dr-controls');
 const releaseConfig = loadReleaseConfig();
 const {
   evaluateOperationalPilotEvidence,
@@ -248,9 +249,13 @@ async function preflightIntent(intent, event) {
   if (intent.side === 'SELL') {
     if (!position) throw new Error('POSITION_NOT_FOUND');
     const heldQty = Math.floor(Number(position.qty || 0));
-    if (intent.quantity >= heldQty) throw new Error('FULL_POSITION_EXIT_BLOCKED');
-    const maxFraction = numberEnv('MAX_LIVE_POSITION_FRACTION', 0.25);
-    if (intent.quantity > Math.floor(heldQty * maxFraction)) throw new Error('POSITION_FRACTION_LIMIT_EXCEEDED');
+    if (intent.quantity > heldQty) throw new Error('SELL_QUANTITY_EXCEEDS_POSITION');
+    if (intent.quantity === heldQty) {
+      if (!isCandidateDrFullExit(intent, heldQty)) throw new Error('FULL_POSITION_EXIT_BLOCKED');
+    } else {
+      const maxFraction = numberEnv('MAX_LIVE_POSITION_FRACTION', 0.25);
+      if (intent.quantity > Math.floor(heldQty * maxFraction)) throw new Error('POSITION_FRACTION_LIMIT_EXCEEDED');
+    }
   }
 
   const rawOrders = await fetchRawOrders();

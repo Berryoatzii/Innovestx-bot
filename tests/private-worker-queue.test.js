@@ -29,11 +29,15 @@ test('claimed payload signature binds every money-moving field', () => {
   const payload = {
     intentId: '0123456789abcdef', claimId: 'a'.repeat(32), symbol: 'TTB', side: 'BUY',
     quantity: 100, price: 2.9, orderStyle: 'RESTING_LIMIT', expiresAt: '2026-08-26T10:00:00Z',
+    portfolioQty: 0, boardLot: 100, instrumentType: 'EQUITY', exitMode: 'PARTIAL_ONLY',
+    candidateId: '', strategyVersion: 'RULES_PROPOSAL_V1',
   };
   const signed = _test.signWorkerPayload(payload);
   assert.match(signed, /^[a-f0-9]{64}$/);
   assert.notEqual(signed, _test.signWorkerPayload({ ...payload, price: 2.92 }));
   assert.notEqual(signed, _test.signWorkerPayload({ ...payload, quantity: 200 }));
+  assert.notEqual(signed, _test.signWorkerPayload({ ...payload, boardLot: 1 }));
+  assert.notEqual(signed, _test.signWorkerPayload({ ...payload, exitMode: 'FULL_POSITION' }));
 });
 
 test('worker can submit only the exact approved resting Limit order', () => {

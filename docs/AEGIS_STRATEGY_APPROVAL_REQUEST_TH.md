@@ -1,69 +1,65 @@
-# คำขออนุมัติ Strategy/Logic/Parameters — AEGIS RC1
+# คำขออนุมัติ Strategy/Logic/Parameters — AEGIS RC2
 
-> **HOLD — ห้ามส่ง ณ 31 ส.ค. 2569:** Candidate นี้ยังไม่ผ่าน recent holdout ทั้งในพอร์ต 28 ตัวและ SET50 H2/2569 จึงยังไม่ eligible สำหรับส่งขออนุมัติบริษัทสมาชิก เอกสารส่วนอีเมลด้านล่างเป็นเพียง draft จนกว่า research และ forward-shadow gates จะผ่าน
+> **DRAFT — ยังไม่ส่ง:** เอกสารนี้พร้อมให้ผู้ใช้ตรวจและอนุมัติผู้รับ/เนื้อหาแยกต่างหาก ระบบยังไม่เปิด Production Trading
 
 เอกสารนี้ไม่มีเลขบัญชี, App ID, Secret, PIN หรือ Token และไม่ใช่คำสั่งซื้อขาย
 
 ## ขอบเขตที่ขอให้ InnovestX ยืนยัน
 
-- Candidate ID: `AEGIS-MOMENTUM-BREAKOUT-RC1-2026-08-31`
-- Strategy version: `MOMENTUM_BREAKOUT_V1.0.0`
+- Candidate ID: `AEGIS-DR-ROTATION-RC2-2026-08-31`
+- Strategy version: `DIVERSIFIED_DR_TREND_BUFFER_V1.0.0`
 - Candidate file: `config/strategy-approval-candidate.json`
-- SHA-256: `9ec7197a1899cdfa4ea9d6fdc847a0a9a926d06c039f40af0ee90d281cc2dae1`
-- ตลาด: หุ้นไทย ผ่าน Settrade Open API/SDK (`ALGO_EQ Production`)
-- บัญชี: Cash Balance, long-only, ไม่ใช้ leverage, ไม่ short, ไม่ใช้ TFEX
-- รูปแบบ: ระบบสร้างข้อเสนอจากกฎตายตัว แต่ทุกออเดอร์ต้องได้รับ human approval แยกรายการ
-- Pilot: ไม่เกิน 1 ออเดอร์ต่อวัน, มูลค่าไม่เกิน 3,500 บาท, ไม่เกิน 3,500 บาทต่อวัน
-- Order: Resting Limit เท่านั้น; ไม่ใช้ Market/ATO/ATC; ไม่ขายหมดสถานะ
+- SHA-256: `609a4773b6a9f8bd93e103ba3cd36fa310402adcec4e82d27a187511d4262059`
+- ตลาด/ช่องทาง: DR ที่ซื้อขายในตลาดไทยผ่าน Settrade Open API/SDK (`ALGO_EQ Production`)
+- สัญลักษณ์: `SP50001`, `NDX01`, `INDIA01`, `CN01`, `BONDUS01`, `GOLDUS03`
+- บัญชี: Cash Balance, long-only, fully paid, ไม่ใช้ leverage, ไม่ short, ไม่ใช้ TFEX
+- รูปแบบ: ระบบคำนวณจากกฎตายตัว แต่ทุก Place/Change/Cancel ต้องมี human approval แยกรายการ
+- Pilot: ไม่เกิน 1 ออเดอร์ต่อวัน, มูลค่าไม่เกิน 3,500 บาท และรักษาเงินสดหลังซื้ออย่างน้อย 5,000 บาท
+- Order: Resting Limit เท่านั้น; ไม่ใช้ Market/ATO/ATC
+- Exit: อนุญาตขายครบสถานะเฉพาะ DR ที่อยู่ใน candidate นี้เมื่อหลุด eligibility/rank และยังต้องอนุมัติรายออเดอร์
 - ความไม่แน่นอน: ไม่ retry broker อัตโนมัติ; reconcile-only
 
-## Logic สัญญาณซื้อ ACTIVE
+## Strategy/Logic/Parameters
 
-ข้อมูลรายวันอย่างน้อย 220 แท่งและต้องไม่เก่าเกิน 7 วัน โดยจะเป็น `BUY_CANDIDATE` เฉพาะเมื่อครบทุกข้อ:
+1. ประเมินข้อมูลปิดรายเดือนของ DR ทั้ง 6 ตัวผ่านตัวแทนดัชนี/ETF ที่ระบุใน candidate
+2. ต้องมีข้อมูล warm-up 12 เดือน
+3. ผ่าน eligibility เมื่อราคาปัจจุบันสูงกว่าค่าเฉลี่ยราคาปิด 12 เดือนก่อนหน้า และ momentum 6 เดือนเป็นบวก
+4. เรียงลำดับ momentum จากมากไปน้อย เลือกได้สูงสุด 3 ตัว
+5. น้ำหนักเป้าหมายตัวละไม่เกิน 5% และ gross exposure รวมไม่เกิน 15%
+6. Rebalance รายไตรมาส; position เดิมถือได้ต่อหากยังอยู่ไม่เกินอันดับ 5 (no-trade buffer)
+7. ขายครบสถานะ DR นั้นเมื่อหลุด eligibility หรืออยู่นอก retention rank
+8. เงินสดเป้าหมายขั้นต่ำ 20% และห้ามใช้ Credit Limit เป็นฐาน sizing
 
-1. ดัชนี benchmark ปิดเหนือ EMA200
-2. ราคาปิดสูงกว่า EMA20 และ EMA20 สูงกว่า EMA50
-3. ราคาปิดทะลุจุดสูงสุด 20 วันก่อนหน้า
-4. Volume เทียบค่าเฉลี่ย 20 วันไม่น้อยกว่า 1.2 เท่า
-5. RSI(14) อยู่ระหว่าง 55–75
-6. ราคาอยู่เหนือ EMA20 ไม่เกิน 2.5 ATR
+## หลักฐานวิจัย
 
-สัญญาณออกเป็นเพียง `EXIT_REVIEW` เมื่อราคาปิดต่ำกว่า EMA20 หรือ trailing level เท่ากับ highest close 20 วันลบ 2 ATR ระบบไม่ขายอัตโนมัติ
+- Candidate ถูก freeze ก่อนเปิด final holdout และผูก hash กับ implementation/universe
+- Final holdout: ส.ค. 2567–ก.ค. 2569 ผ่านครบต้นทุน turnover 0.268%, 0.5% และ 1.0%
+- ผลตอบแทนหลังต้นทุน final holdout +4.34% ถึง +4.66%
+- ชนะ benchmark ที่ใช้ gross exposure เท่ากัน +0.35% ถึง +0.51%
+- Maximum drawdown ประมาณ -0.95%
 
-## Risk และ Portfolio Parameters
-
-- ACTIVE target 20%, เงินสดเป้าหมายขั้นต่ำ 20%
-- ACTIVE ต่อหลักทรัพย์ไม่เกิน 5%, พร้อมกันไม่เกิน 4 ตัว
-- Risk budget ต่อรายการ 0.5% ของทุนที่ใช้คำนวณ
-- Reward-to-risk หลังค่าธรรมเนียมและ slippage ไม่น้อยกว่า 2.0
-- เงินสดหลังซื้ออย่างน้อย 5,000 บาท
-- Spread สูงสุด 3%; Limit ห่างราคาล่าสุดไม่เกิน 15%
-- ต้องตรวจพอร์ต เงินสด ราคา bid/ask ออเดอร์ซ้ำ สถานะตลาด และ unresolved journal ก่อนส่ง
-
-## Release Conditions
-
-แม้ได้รับอนุมัติจากบริษัทสมาชิกแล้ว ระบบยังไม่เปิดทันที ต้องมี shadow evidence อย่างน้อย 20 วันทำการ, 100 decisions และ 10 simulated trades; ผลตอบแทนหลังต้นทุนและ excess return ต้องเป็นบวก; drawdown ต้องไม่ต่ำกว่า -10% พร้อม Production Read-Only, zero unresolved, Telegram approval และ commit attestation ที่ตรงกัน
-
-`strategyReleaseApproved` และ `liveTradingEnabled` จะคงเป็น `false` จนกว่าจะได้รับคำตอบที่อ้างถึง Candidate ID/Version/Hash นี้อย่างชัดเจนและผ่าน release conditions ครบ
+ผลย้อนหลังไม่รับรองผลตอบแทนในอนาคต และแม้ได้รับอนุมัติ ระบบยังต้องผ่าน execution compatibility, forward shadow, production read-only, zero unresolved, Telegram human approval และ commit attestation ก่อนเปิดเงินจริง
 
 ## ร่างข้อความสำหรับส่งจากอีเมลส่วนตัวที่ลงทะเบียน
 
-หัวข้อ: ขออนุมัติ Strategy/Logic/Parameters สำหรับ Settrade Open API — AEGIS RC1
+หัวข้อ: ขออนุมัติ Strategy/Logic/Parameters สำหรับ DR ผ่าน Settrade Open API — AEGIS RC2
 
 เรียน ทีม InnovestX
 
-บัญชีของข้าพเจ้าได้รับการ activate Settrade Open API แล้วเมื่อวันที่ 5 มิถุนายน 2569 ข้าพเจ้าขอให้บริษัทตรวจสอบและยืนยันเป็นลายลักษณ์อักษรว่าสามารถใช้ Strategy/Logic/Parameters ต่อไปนี้ผ่าน ALGO_EQ Production ได้หรือไม่:
+บัญชีของข้าพเจ้าได้รับการ activate Settrade Open API แล้ว ข้าพเจ้าขอให้บริษัทตรวจสอบและยืนยันเป็นลายลักษณ์อักษรว่าสามารถใช้ Strategy/Logic/Parameters ต่อไปนี้ผ่าน ALGO_EQ Production ได้หรือไม่:
 
-- Candidate ID: AEGIS-MOMENTUM-BREAKOUT-RC1-2026-08-31
-- Version: MOMENTUM_BREAKOUT_V1.0.0
-- SHA-256: 9ec7197a1899cdfa4ea9d6fdc847a0a9a926d06c039f40af0ee90d281cc2dae1
-- Cash Balance, long-only, no leverage/short/TFEX
-- Human approval ต่อออเดอร์, Resting Limit เท่านั้น
+- Candidate ID: AEGIS-DR-ROTATION-RC2-2026-08-31
+- Version: DIVERSIFIED_DR_TREND_BUFFER_V1.0.0
+- SHA-256: 609a4773b6a9f8bd93e103ba3cd36fa310402adcec4e82d27a187511d4262059
+- DR: SP50001, NDX01, INDIA01, CN01, BONDUS01, GOLDUS03
+- Cash Balance, long-only, fully paid, no leverage/short/TFEX
+- Human approval ต่อ Place/Change/Cancel ทุกออเดอร์ และใช้ Resting Limit เท่านั้น
 - Pilot สูงสุด 1 ออเดอร์และ 3,500 บาทต่อวัน
+- การขายครบสถานะจำกัดเฉพาะ DR ใน candidate เมื่อหลุด eligibility/rank และต้องอนุมัติรายออเดอร์
 - ไม่มี automatic broker retry; หากผลไม่แน่นอนจะ reconcile อย่างเดียว
 
-รายละเอียด Logic และ Risk Parameters อยู่ในเอกสารแนบ หากยังไม่สามารถอนุมัติได้ โปรดระบุขั้นตอน แบบฟอร์ม หรือพารามิเตอร์ที่ต้องแก้ไข และโปรดยืนยันให้ชัดว่าการอนุมัติครอบคลุม Place/Change/Cancel ผ่าน Settrade Open API/SDK หรือไม่
+รายละเอียด Logic, Risk Parameters และหลักฐาน final holdout อยู่ในเอกสารแนบ โปรดยืนยันให้ชัดว่าการอนุมัติครอบคลุม Place/Change/Cancel ผ่าน Settrade Open API/SDK สำหรับ candidate/version/hash นี้หรือไม่ หากยังไม่สามารถอนุมัติได้ โปรดระบุขั้นตอน แบบฟอร์ม หรือพารามิเตอร์ที่ต้องแก้ไข
 
 ขอบคุณครับ
 
-หมายเหตุ: ร่างนี้ยังไม่ถูกส่ง ผู้ใช้ต้องตรวจผู้รับและเนื้อหาแล้วอนุมัติการส่งแยกต่างหาก
+หมายเหตุ: ร่างนี้ยังไม่ถูกส่ง ผู้ใช้ต้องยืนยันผู้รับและเนื้อหาก่อนส่ง

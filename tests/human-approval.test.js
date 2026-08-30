@@ -69,6 +69,35 @@ test('intent schema rejects full-position exit', () => {
   }), /FULL_POSITION_EXIT_NOT_ALLOWED/);
 });
 
+test('intent schema permits full exit only for the exact RC2 DR scope', () => {
+  const candidate = require('../config/strategy-approval-candidate.json');
+  const { buildIntent } = require('../netlify/lib/order-intent-store');
+  const intent = buildIntent({
+    idempotencyKey: 'rc2-dr-full-exit',
+    symbol: candidate.approvalScope.symbols[0],
+    side: 'SELL',
+    quantity: 7,
+    proposedPrice: 34.75,
+    portfolioQty: 7,
+    portfolioBucket: 'ACTIVE',
+    orderStyle: 'RESTING_LIMIT',
+    candidateId: candidate.candidateId,
+    strategyVersion: candidate.strategyVersion,
+    instrumentType: 'DR',
+    exitMode: 'FULL_POSITION',
+    boardLot: 1,
+  });
+
+  assert.equal(intent.exitMode, 'FULL_POSITION');
+  assert.equal(intent.instrumentType, 'DR');
+  assert.equal(intent.quantity, intent.portfolioQty);
+  assert.throws(() => buildIntent({
+    ...intent,
+    idempotencyKey: 'rc2-dr-wrong-candidate',
+    candidateId: 'OTHER',
+  }), /FULL_POSITION_EXIT_NOT_ALLOWED/);
+});
+
 test('intent is advisory-only and expires', () => {
   const { buildIntent } = require('../netlify/lib/order-intent-store');
   const intent = buildIntent({
@@ -148,6 +177,8 @@ test('approval readiness uses the SDK gateway and never requires broker secrets 
     productionReadOnlyVerified: true,
     zeroUnresolvedVerified: true,
     strategyReleaseApproved: true,
+    executionCompatibilityVerified: true,
+    forwardShadowVerified: true,
     privateWorkerEvidence: {
       privateHost: true, gatewayLoopbackOnly: true, persistentJournal: true,
       watchdogEnabled: true, secretsProtected: true, singleSessionFence: true,

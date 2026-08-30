@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "evidenceType": "DR_EXECUTION_COMPATIBILITY",
+  "candidateId": "AEGIS-DR-ROTATION-RC2-2026-08-31",
+  "strategyVersion": "DIVERSIFIED_DR_TREND_BUFFER_V1.0.0",
+  "candidateSha256": "609a4773b6a9f8bd93e103ba3cd36fa310402adcec4e82d27a187511d4262059",
+  "verifiedAt": "2026-08-31T02:00:00+07:00",
+  "passed": true,
+  "restingLimitOnlyVerified": true,
+  "perOrderBoardLotVerified": true,
+  "freshFullExitQuantityVerified": true,
+  "privateWorkerPayloadBound": true,
+  "candidateDrScopeVerified": true,
+  "productionLockedDuringVerification": true,
+  "brokerCalled": false,
+  "moneyMoving": false,
+  "testResults": {
+    "node": { "passed": 201, "failed": 0 },
+    "pythonGateway": { "passed": 118, "failed": 0 }
+  },
+  "implementationRefs": [
+    {
+      "path": "netlify/lib/candidate-dr-controls.js",
+      "sha256": "626367d2696bd3ea961006c1093d2a8ebe87472a038e627c3f244678c3796182"
+    },
+    {
+      "path": "netlify/lib/order-intent-store.js",
+      "sha256": "fb621fab238e50928edff68040d03a4e9e35d3810f7a44ba7280a65a5e1921ac"
+    },
+    {
+      "path": "netlify/lib/approval-executor.js",
+      "sha256": "92d0f749ab773d79aa92cfd0131c3781292f87cc744047f48ffa9cc5180b2241"
+    },
+    {
+      "path": "netlify/lib/private-worker-queue.js",
+      "sha256": "3eb41a3ef5421c80a87b99dfdcba8d1b766d7f38c5d215506cb354cfe8aa206f"
+    },
+    {
+      "path": "broker_gateway/private_worker.py",
+      "sha256": "4c1f6ed0b329f5bb9033f0e767338ae6db1fbc906af8e9d7b5b2cafab01ca774"
+    }
+  ],
+  "releaseState": {
+    "executionCompatibilityVerified": false,
+    "forwardShadowVerified": false,
+    "strategyReleaseApproved": false,
+    "liveTradingEnabled": false
+  }
+}

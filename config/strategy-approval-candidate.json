@@ -1,51 +1,70 @@
 {
-  "schemaVersion": 1,
-  "candidateId": "AEGIS-MOMENTUM-BREAKOUT-RC1-2026-08-31",
-  "strategyVersion": "MOMENTUM_BREAKOUT_V1.0.0",
+  "schemaVersion": 2,
+  "candidateId": "AEGIS-DR-ROTATION-RC2-2026-08-31",
+  "strategyVersion": "DIVERSIFIED_DR_TREND_BUFFER_V1.0.0",
   "approvalStatus": "PENDING_MEMBER_APPROVAL",
   "approvalScope": {
     "member": "InnovestX Securities",
-    "market": "THAI_EQUITY",
+    "market": "THAI_DEPOSITARY_RECEIPTS_VIA_ALGO_EQ",
+    "symbols": ["SP50001", "NDX01", "INDIA01", "CN01", "BONDUS01", "GOLDUS03"],
     "accountType": "CASH_BALANCE",
     "longOnly": true,
     "shortSelling": false,
     "derivatives": false,
     "leverage": false,
     "continuousAutomation": false,
-    "humanApprovalPerOrder": true
+    "humanApprovalPerOrder": true,
+    "requestedPermissions": {
+      "place": true,
+      "change": true,
+      "cancel": true
+    }
+  },
+  "researchEvidence": {
+    "frozenCandidate": {
+      "path": "config/dr-strategy-research-candidate-rc2.json",
+      "sha256": "b789d8c63f75db090b789d56c116a92a638a653e7215d7a6097338cb3602438c"
+    },
+    "finalHoldout": {
+      "path": "config/dr-strategy-final-holdout-rc2.json",
+      "sha256": "719acdaf7001a851a29abdc014d69ddf588f5c1f66c6f0494308e2d8f302d2ef",
+      "passed": true,
+      "startMonth": "2024-08",
+      "completedThroughMonth": "2026-07"
+    }
   },
   "signalLogic": {
-    "minimumDailyBars": 220,
-    "maximumDailyDataAgeDays": 7,
-    "benchmarkRegime": "BENCHMARK_CLOSE_ABOVE_EMA200",
-    "trend": "CLOSE_ABOVE_EMA20_AND_EMA20_ABOVE_EMA50",
-    "breakout": "CLOSE_ABOVE_PRIOR_20_DAY_HIGH",
-    "minimumVolumeRatio20Day": 1.2,
-    "rsi14Minimum": 55,
-    "rsi14Maximum": 75,
-    "maximumExtensionFromEma20Atr": 2.5,
-    "exitReview": [
-      "CLOSE_BELOW_EMA20",
-      "CLOSE_BELOW_HIGHEST_CLOSE20_MINUS_2_ATR"
-    ]
+    "observationFrequency": "MONTHLY",
+    "rebalanceFrequency": "QUARTERLY",
+    "warmupMonths": 12,
+    "momentumMonths": 6,
+    "absoluteTrend": "CURRENT_CLOSE_ABOVE_MEAN_OF_PRIOR_12_MONTHLY_CLOSES",
+    "positiveMomentumRequired": true,
+    "rankDirection": "DESCENDING_MOMENTUM",
+    "maximumSelected": 3,
+    "retentionRank": 5,
+    "positionWeight": 0.05,
+    "entry": "ENTER_ELIGIBLE_TOP_RANKED_DR_UNTIL_THREE_POSITIONS",
+    "exit": "EXIT_FULL_DR_POSITION_WHEN_NO_LONGER_ELIGIBLE_OR_OUTSIDE_RETENTION_RANK"
   },
   "portfolioAndRiskParameters": {
-    "activeSleeveTargetWeight": 0.2,
     "minimumCashTargetWeight": 0.2,
-    "maximumActivePositionWeight": 0.05,
-    "maximumActivePositions": 4,
-    "riskPerTradeWeight": 0.005,
-    "minimumRewardToRiskAfterCosts": 2,
+    "maximumStrategyGrossWeight": 0.15,
+    "maximumPositionWeight": 0.05,
+    "maximumPositions": 3,
     "maximumPilotOrderValueTHB": 3500,
     "maximumOrdersPerDay": 1,
     "maximumDailyNotionalTHB": 3500,
-    "minimumPostTradeCashTHB": 5000
+    "minimumPostTradeCashTHB": 5000,
+    "fullyPaidLongOnly": true,
+    "creditLimitSizingAllowed": false
   },
   "orderAndExecutionControls": {
     "orderType": "RESTING_LIMIT_ONLY",
     "marketOrdersAllowed": false,
     "auctionOrdersAllowed": false,
-    "fullPositionExitAllowed": false,
+    "fullPositionExitAllowed": true,
+    "fullPositionExitScope": "CANDIDATE_DR_POSITIONS_ONLY",
     "approvalBindsSymbolSideQuantityAndPrice": true,
     "approvalExpires": true,
     "duplicateOpenOrderBlocked": true,
@@ -58,12 +77,8 @@
   "releaseConditions": {
     "accountLevelOpenApiActivationRequired": true,
     "memberStrategyApprovalRequired": true,
-    "shadowMinimumTradingDays": 20,
-    "shadowMinimumDecisionEvents": 100,
-    "shadowMinimumTradeEvents": 10,
-    "shadowMaximumDrawdown": -0.1,
-    "shadowMinimumAfterCostReturn": 0,
-    "shadowMinimumBenchmarkExcessReturn": 0,
+    "executionCompatibilityEvidenceRequired": true,
+    "forwardShadowEvidenceRequired": true,
     "productionReadOnlyVerificationRequired": true,
     "zeroUnresolvedRequired": true,
     "telegramHumanApprovalRequired": true,
