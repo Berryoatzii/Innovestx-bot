@@ -1,5 +1,6 @@
 const { fetchDailyHistory } = require('../netlify/lib/research-market-data');
 const { runBacktestValidationSuite } = require('../netlify/lib/backtest-engine');
+const { runPortfolioValidationSuite } = require('../netlify/lib/portfolio-backtest');
 const { loadPortfolioPolicy } = require('../netlify/lib/portfolio-policy');
 const set50Universe = require('../config/research-universe-set50-h2-2026.json');
 
@@ -18,10 +19,12 @@ async function main() {
   const symbols = useSet50 ? [...set50Universe.symbols].sort() : portfolioSymbols;
   const benchmark = await fetchDailyHistory('^SET.BK', { range: '10y' });
   const results = [];
+  const histories = {};
 
   for (const symbol of symbols) {
     try {
       const history = await fetchDailyHistory(symbol, { range: '10y' });
+      histories[symbol] = history.candles;
       const validation = runBacktestValidationSuite(history.candles, benchmark.candles, {
         symbol,
         initialCapital: 100000,
@@ -52,6 +55,21 @@ async function main() {
     }
   }
 
+  const portfolioGate = process.argv.includes('--portfolio-gate')
+    ? runPortfolioValidationSuite(histories, benchmark.candles, {
+      expectedSymbols: symbols.length,
+      initialCapital: 100000,
+      maxPositionWeight: policy.active.maxPositionWeight,
+      boardLot: 100,
+      benchmark: 'SET_INDEX_PROXY',
+      minimumStressTrades: 5,
+      minimumStressReturn: 0,
+      maximumStressDrawdown: -0.25,
+      oosBars: 504,
+      minimumHoldoutTrades: 3,
+    })
+    : null;
+
   process.stdout.write(`${JSON.stringify({
     generatedAt: new Date().toISOString(),
     authority: 'LOCAL_PUBLIC_MARKET_DATA_READ_ONLY',
@@ -60,6 +78,7 @@ async function main() {
     orderIntentCreated: false,
     symbols: results.length,
     passed: results.filter((item) => item.passed).map((item) => item.symbol),
+    portfolioGate,
     results,
   }, null, 2)}\n`);
 }

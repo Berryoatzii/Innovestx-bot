@@ -46,13 +46,28 @@ function driftWeights(targets, returns, portfolioReturn) {
   ]));
 }
 
+function selectWithRetention(rankedSymbols, currentSelection, maxSelected, retentionRank) {
+  const retained = currentSelection.filter((symbol) => {
+    const rank = rankedSymbols.indexOf(symbol);
+    return rank >= 0 && rank < retentionRank;
+  });
+  return [
+    ...retained,
+    ...rankedSymbols.filter((symbol) => !retained.includes(symbol)),
+  ].slice(0, maxSelected);
+}
+
 function runMonthlyAllocation(monthlyBySymbol, options = {}) {
   const warmupMonths = Math.max(10, Number(options.warmupMonths || 10));
   const momentumMonths = Math.max(1, Number(options.momentumMonths || 6));
   const maxSelected = Math.max(1, Number(options.maxSelected || 3));
   const positionWeight = Number(options.positionWeight || 0.05);
+  const rebalanceEveryMonths = Math.max(1, Number(options.rebalanceEveryMonths || 1));
+  const retentionRank = Math.max(maxSelected, Number(options.retentionRank || maxSelected));
   const costRate = Number(options.costRate || 0);
   const { symbols, maps, common } = alignedHistory(monthlyBySymbol);
+  const benchmarkGrossExposure = Math.min(1, maxSelected * positionWeight);
+  const benchmarkPositionWeight = benchmarkGrossExposure / symbols.length;
   if (common.length < warmupMonths + 2) throw new Error('INSUFFICIENT_COMMON_MONTHS');
   const requestedStart = options.evaluationStartMonth
     ? common.findIndex((month) => month >= options.evaluationStartMonth)
@@ -65,29 +80,41 @@ function runMonthlyAllocation(monthlyBySymbol, options = {}) {
   let weights = Object.fromEntries(symbols.map((symbol) => [symbol, 0]));
   let benchmarkWeights = Object.fromEntries(symbols.map((symbol) => [symbol, 0]));
   let positionChanges = 0;
+  let rebalances = 0;
+  let selected = [];
   const decisionLog = [];
   const curve = [{ month: common[startIndex], equity }];
 
   for (let index = startIndex; index < common.length - 1; index += 1) {
     const signalMonth = common[index];
     const returnMonth = common[index + 1];
-    const ranked = symbols.flatMap((symbol) => {
-      const current = maps[symbol].get(signalMonth);
-      const priorTrend = common.slice(index - warmupMonths, index)
-        .map((month) => maps[symbol].get(month));
-      const momentumBase = maps[symbol].get(common[index - momentumMonths]);
-      const momentum = current / momentumBase - 1;
-      return current > mean(priorTrend) && momentum > 0 ? [{ symbol, momentum }] : [];
-    }).sort((a, b) => b.momentum - a.momentum || a.symbol.localeCompare(b.symbol));
-    const selected = ranked.slice(0, maxSelected).map((row) => row.symbol);
-    const targets = Object.fromEntries(symbols.map((symbol) => [
-      symbol, selected.includes(symbol) ? positionWeight : 0,
-    ]));
+    const isRebalance = (index - startIndex) % rebalanceEveryMonths === 0;
+    let targets;
+    if (isRebalance) {
+      const ranked = symbols.flatMap((symbol) => {
+        const current = maps[symbol].get(signalMonth);
+        const priorTrend = common.slice(index - warmupMonths, index)
+          .map((month) => maps[symbol].get(month));
+        const momentumBase = maps[symbol].get(common[index - momentumMonths]);
+        const momentum = current / momentumBase - 1;
+        return current > mean(priorTrend) && momentum > 0 ? [{ symbol, momentum }] : [];
+      }).sort((a, b) => b.momentum - a.momentum || a.symbol.localeCompare(b.symbol));
+      const rankedSymbols = ranked.map((row) => row.symbol);
+      selected = selectWithRetention(rankedSymbols, selected, maxSelected, retentionRank);
+      targets = Object.fromEntries(symbols.map((symbol) => [
+        symbol, selected.includes(symbol) ? positionWeight : 0,
+      ]));
+      rebalances += 1;
+    } else {
+      targets = { ...weights };
+    }
     const turnover = symbols.reduce((sum, symbol) => sum + Math.abs(targets[symbol] - weights[symbol]), 0);
     if (turnover > 1e-12) positionChanges += 1;
     equity *= Math.max(0, 1 - turnover * costRate);
 
-    const benchmarkTargets = Object.fromEntries(symbols.map((symbol) => [symbol, positionWeight]));
+    const benchmarkTargets = isRebalance
+      ? Object.fromEntries(symbols.map((symbol) => [symbol, benchmarkPositionWeight]))
+      : { ...benchmarkWeights };
     const benchmarkTurnover = symbols.reduce(
       (sum, symbol) => sum + Math.abs(benchmarkTargets[symbol] - benchmarkWeights[symbol]), 0,
     );
@@ -103,7 +130,7 @@ function runMonthlyAllocation(monthlyBySymbol, options = {}) {
     benchmarkEquity *= 1 + benchmarkReturn;
     weights = driftWeights(targets, returns, portfolioReturn);
     benchmarkWeights = driftWeights(benchmarkTargets, returns, benchmarkReturn);
-    decisionLog.push({ signalMonth, returnMonth, selected, turnover });
+    decisionLog.push({ signalMonth, returnMonth, selected: [...selected], turnover, rebalanced: isRebalance });
     curve.push({ month: returnMonth, equity });
   }
 
@@ -113,7 +140,17 @@ function runMonthlyAllocation(monthlyBySymbol, options = {}) {
     strategy: 'DIVERSIFIED_MONTHLY_TREND_V1',
     startMonth: decisionLog[0]?.signalMonth || null,
     endMonth: decisionLog.at(-1)?.returnMonth || null,
-    assumptions: { warmupMonths, momentumMonths, maxSelected, positionWeight, costRate },
+    assumptions: {
+      warmupMonths,
+      momentumMonths,
+      maxSelected,
+      positionWeight,
+      rebalanceEveryMonths,
+      retentionRank,
+      costRate,
+      benchmarkGrossExposure,
+      benchmarkPositionWeight,
+    },
     metrics: {
       totalReturn,
       benchmarkReturn,
@@ -121,6 +158,7 @@ function runMonthlyAllocation(monthlyBySymbol, options = {}) {
       maxDrawdown: maxDrawdown(curve),
       decisions: decisionLog.length,
       positionChanges,
+      rebalances,
     },
     decisionLog,
     equityCurve: curve,
@@ -166,6 +204,7 @@ function runAllocationStressMatrix(monthlyBySymbol, options = {}) {
 
 module.exports = {
   monthlyCloses,
+  selectWithRetention,
   runMonthlyAllocation,
   runAllocationStressMatrix,
 };

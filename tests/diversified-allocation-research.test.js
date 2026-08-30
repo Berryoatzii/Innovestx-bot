@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   monthlyCloses,
+  selectWithRetention,
   runMonthlyAllocation,
   runAllocationStressMatrix,
 } = require('../netlify/lib/diversified-allocation-research');
@@ -46,6 +47,58 @@ test('monthly allocation applies a signal only to the following month return', (
   assert.equal(result.decisionLog[0].returnMonth, '2020-12');
   assert.deepEqual(result.decisionLog[0].selected, ['RISE']);
   assert.ok(result.metrics.totalReturn > 0);
+});
+
+test('benchmark uses the same maximum gross exposure as the allocation strategy', () => {
+  const risingA = Array.from({ length: 40 }, (_, index) => 100 + index * 2);
+  const risingB = Array.from({ length: 40 }, (_, index) => 80 + index);
+  const result = runMonthlyAllocation({
+    A: monthRows('A', risingA),
+    B: monthRows('B', risingB),
+  }, {
+    warmupMonths: 10,
+    momentumMonths: 6,
+    maxSelected: 1,
+    positionWeight: 0.05,
+    costRate: 0,
+  });
+
+  assert.equal(result.assumptions.benchmarkGrossExposure, 0.05);
+  assert.equal(result.assumptions.benchmarkPositionWeight, 0.025);
+});
+
+test('scheduled rebalancing holds drifted weights between decision months', () => {
+  const risingA = Array.from({ length: 40 }, (_, index) => 100 + index * 2);
+  const risingB = Array.from({ length: 40 }, (_, index) => 80 + index);
+  const result = runMonthlyAllocation({
+    A: monthRows('A', risingA),
+    B: monthRows('B', risingB),
+  }, {
+    warmupMonths: 10,
+    momentumMonths: 6,
+    maxSelected: 1,
+    positionWeight: 0.05,
+    rebalanceEveryMonths: 3,
+    costRate: 0.01,
+  });
+
+  assert.equal(result.decisionLog[0].rebalanced, true);
+  assert.equal(result.decisionLog[1].rebalanced, false);
+  assert.equal(result.decisionLog[1].turnover, 0);
+  assert.equal(result.decisionLog[2].rebalanced, false);
+  assert.equal(result.decisionLog[3].rebalanced, true);
+  assert.equal(result.metrics.rebalances, Math.ceil(result.metrics.decisions / 3));
+});
+
+test('retention buffer drops ineligible holdings and never exceeds the position cap', () => {
+  assert.deepEqual(
+    selectWithRetention(['B', 'C', 'D'], ['A', 'B', 'C'], 2, 3),
+    ['B', 'C'],
+  );
+  assert.deepEqual(
+    selectWithRetention(['C', 'D', 'E'], ['B', 'C'], 2, 2),
+    ['C', 'D'],
+  );
 });
 
 test('allocation fails closed when histories do not share enough complete months', () => {

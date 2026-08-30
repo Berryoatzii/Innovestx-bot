@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "candidateId": "AEGIS-DR-ROTATION-RC2-2026-08-31",
+  "strategyVersion": "DIVERSIFIED_DR_TREND_BUFFER_V1.0.0",
+  "candidateStatus": "FROZEN_FOR_FINAL_HOLDOUT",
+  "authority": "RESEARCH_ONLY_NO_ORDERS",
+  "universeRef": {
+    "path": "config/research-universe-dr-pilot-2026.json",
+    "sha256": "20d5b60230bb5e51558ffa36c69dc58cc166fa9e5b67f39c73d0b40ef7d6b368"
+  },
+  "implementationRefs": [
+    {
+      "path": "netlify/lib/diversified-allocation-research.js",
+      "sha256": "fd83131395b84fd0e0d055b8b6362a526ca10d44d6ddd31e0892973caaf60c7d"
+    },
+    {
+      "path": "tools/local-dr-allocation-tournament.js",
+      "sha256": "59cd9499cbb669ba8f8d7327c2f80dcb0d4be6d3ccd677c9438d7d1c35086fa7"
+    }
+  ],
+  "signalLogic": {
+    "frequency": "MONTHLY_OBSERVATIONS_QUARTERLY_REBALANCE",
+    "warmupMonths": 12,
+    "momentumMonths": 6,
+    "absoluteTrend": "CURRENT_CLOSE_ABOVE_MEAN_OF_PRIOR_12_MONTHLY_CLOSES",
+    "positiveMomentumRequired": true,
+    "rankDirection": "DESCENDING_MOMENTUM",
+    "maximumSelected": 3,
+    "retentionRank": 5,
+    "positionWeight": 0.05,
+    "rebalanceEveryMonths": 3,
+    "cashReturnAssumption": 0
+  },
+  "validationDesign": {
+    "publicProxyTickers": ["SPY", "QQQ", "INDA", "ASHR", "AGG", "GLD"],
+    "developmentDataThroughMonth": "2024-07",
+    "innerHoldoutStartMonth": "2022-07",
+    "stressTurnoverCostRates": [0.00268, 0.005, 0.01],
+    "minimumDecisions": 12,
+    "minimumPositionChanges": 4,
+    "maximumDrawdown": -0.1,
+    "requiresPositiveAfterCostReturn": true,
+    "requiresPositiveBenchmarkExcess": true,
+    "benchmarkGrossExposure": 0.15,
+    "finalHoldout": {
+      "startMonth": "2024-08",
+      "months": 24,
+      "opened": false,
+      "openPolicy": "RUN_ONCE_ONLY_AFTER_THIS_CANDIDATE_IS_COMMITTED"
+    }
+  },
+  "developmentVerdict": {
+    "passed": true,
+    "fullSampleSevereCostExcess": 0.0014295889864590627,
+    "innerHoldoutSevereCostExcess": 0.015151325724238163,
+    "fullSampleMaximumDrawdown": -0.02542346082974667,
+    "innerHoldoutMaximumDrawdown": -0.009522370226215493
+  },
+  "releaseLocks": {
+    "memberStrategyApprovalRequired": true,
+    "finalHoldoutRequired": true,
+    "shadowEvidenceRequired": true,
+    "humanApprovalPerOrderRequired": true,
+    "strategyReleaseApproved": false,
+    "liveTradingEnabled": false
+  },
+  "privacy": {
+    "containsAccountIdentifier": false,
+    "containsCredential": false,
+    "containsPin": false,
+    "containsToken": false
+  }
+}
