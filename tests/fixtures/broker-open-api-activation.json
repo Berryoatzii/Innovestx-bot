@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "evidenceType": "BROKER_OPEN_API_ACCOUNT_ACTIVATION",
+  "broker": "InnovestX Securities",
+  "sourceSender": "no-reply@innovestx.co.th",
+  "sourceSubject": "Your account has been activated for Settrade Open API",
+  "sourceReceivedAt": "2026-06-05T19:01:00+07:00",
+  "verifiedAt": "2026-08-29T16:17:00+07:00",
+  "accountLevelOpenApiActivated": true,
+  "apiKeyProvisioningOffered": true,
+  "strategyLogicParametersApproved": false,
+  "accountIdentifiersRedacted": true,
+  "secretMaterialPresent": false,
+  "scopeNote": "Account-level Open API activation only; this does not approve a strategy, its logic, or parameters."
+}

@@ -1,4 +1,5 @@
 const https = require('https');
+const crypto = require('crypto');
 const { buildBotReadiness, readinessText } = require('../lib/bot-readiness');
 const { isStrongConsistencyError } = require('../lib/blob-runtime');
 
@@ -13,6 +14,70 @@ function jsonResponse(statusCode, data) {
     statusCode,
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     body: JSON.stringify(data),
+  };
+}
+
+function getHeader(headers = {}, name) {
+  const key = Object.keys(headers || {}).find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+  return key ? String(headers[key] || '') : '';
+}
+
+function safeEqual(left, right) {
+  const aa = Buffer.from(String(left || ''));
+  const bb = Buffer.from(String(right || ''));
+  return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
+}
+
+function isScheduledInvocation(event = {}) {
+  return Boolean(
+    event.next_run
+    || event.nextRun
+    || event.triggerSource === 'schedule'
+    || getHeader(event.headers, 'x-netlify-event').toLowerCase() === 'schedule'
+  );
+}
+
+function isDetailedReadAuthorized(event = {}) {
+  const expected = process.env.ADMIN_TOKEN || '';
+  return Boolean(expected && safeEqual(getHeader(event.headers, 'x-admin-token'), expected));
+}
+
+function publicReadiness(readiness = {}) {
+  const shadow = readiness.shadowGate || {};
+  const activeResearch = readiness.activeResearch || {};
+  const coreEvidence = readiness.coreEvidence || {};
+  const releaseEvidence = readiness.releaseEvidence || {};
+  return {
+    generatedAt: readiness.generatedAt || null,
+    stages: readiness.stages || {},
+    telegramReady: Boolean(readiness.telegramReady),
+    classificationComplete: Boolean(readiness.classification?.complete),
+    coreEvidence: {
+      passed: Number(coreEvidence.passed || 0),
+      total: Number(coreEvidence.total || 0),
+    },
+    activeResearch: {
+      passed: Number(activeResearch.passed || 0),
+      total: Number(activeResearch.total || 0),
+    },
+    shadowGate: {
+      passed: Boolean(shadow.passed),
+      tradingDays: Number(shadow.tradingDays || 0),
+      decisionEvents: Number(shadow.decisionEvents || 0),
+      tradeEvents: Number(shadow.tradeEvents || 0),
+      benchmarkCoverage: Number(shadow.benchmarkCoverage || 0),
+      shadowReturn: Number(shadow.shadowReturn || 0),
+      benchmarkReturn: Number(shadow.benchmarkReturn || 0),
+      excessReturn: Number(shadow.excessReturn || 0),
+      worstDrawdown: Number(shadow.worstDrawdown || 0),
+      checks: shadow.checks || {},
+    },
+    approvalReady: Boolean(readiness.approval?.ready),
+    releaseEvidence: {
+      passed: Boolean(releaseEvidence.passed),
+      blockers: Array.isArray(releaseEvidence.blockers) ? releaseEvidence.blockers : [],
+    },
+    liveTradingEnabled: false,
   };
 }
 
@@ -58,19 +123,29 @@ function shouldSendError(error) {
 }
 
 exports.handler = async (event = {}) => {
+  const scheduled = isScheduledInvocation(event);
   try {
     const readiness = await buildBotReadiness(event);
-    await postTelegram(readinessText(readiness));
-    return jsonResponse(200, { ok: true, readiness });
+    if (scheduled) await postTelegram(readinessText(readiness));
+    const detailed = scheduled || isDetailedReadAuthorized(event);
+    return jsonResponse(200, { ok: true, readiness: detailed ? readiness : publicReadiness(readiness) });
   } catch (error) {
-    if (shouldSendError(error)) await postTelegram(errorMessage(error));
+    if (scheduled && shouldSendError(error)) await postTelegram(errorMessage(error));
     return jsonResponse(500, {
       ok: false,
-      error: error.message,
+      error: scheduled || isDetailedReadAuthorized(event) ? error.message : 'READINESS_UNAVAILABLE',
       liveTradingSafe: true,
       liveOrdersPlaced: 0,
     });
   }
 };
 
-module.exports._test = { errorMessage, shouldSendError };
+module.exports._test = {
+  errorMessage,
+  shouldSendError,
+  getHeader,
+  safeEqual,
+  isScheduledInvocation,
+  isDetailedReadAuthorized,
+  publicReadiness,
+};

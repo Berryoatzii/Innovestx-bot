@@ -15,6 +15,7 @@ const REQUIRED_BOOLEAN_EVIDENCE = [
 
 const FILE_BACKED_EVIDENCE = [
   'uatOrderCycleComplete',
+  'brokerPermissionConfirmed',
   'productionReadOnlyVerified',
   'zeroUnresolvedVerified',
 ];
@@ -32,6 +33,30 @@ function verifyEvidenceRef(reference = {}, root = path.resolve(__dirname, '../..
   } catch {
     return false;
   }
+}
+
+function loadVerifiedEvidenceJson(reference = {}, root = path.resolve(__dirname, '../..')) {
+  if (!verifyEvidenceRef(reference, root)) return null;
+  const relativePath = String(reference.path || '').trim().replace(/\\/g, '/');
+  const resolvedRoot = path.resolve(root);
+  const resolvedPath = path.resolve(resolvedRoot, relativePath);
+  if (resolvedPath !== resolvedRoot && !resolvedPath.startsWith(`${resolvedRoot}${path.sep}`)) return null;
+  try {
+    const value = JSON.parse(fs.readFileSync(resolvedPath, 'utf8'));
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function verifyBrokerPermissionEvidence(reference = {}, root = path.resolve(__dirname, '../..')) {
+  const value = loadVerifiedEvidenceJson(reference, root);
+  return value?.evidenceType === 'BROKER_OPEN_API_ACCOUNT_ACTIVATION'
+    && value.accountLevelOpenApiActivated === true
+    && value.apiKeyProvisioningOffered === true
+    && value.strategyLogicParametersApproved === false
+    && value.accountIdentifiersRedacted === true
+    && value.secretMaterialPresent === false;
 }
 
 function runtimeCommitEvidence(input = {}, options = {}) {
@@ -53,6 +78,8 @@ function evaluateReleaseEvidence(input = {}, options = {}) {
     for (const key of FILE_BACKED_EVIDENCE) {
       checks[key] = checks[key] && verifyEvidenceRef(input.evidenceRefs?.[key]);
     }
+    checks.brokerPermissionConfirmed = checks.brokerPermissionConfirmed
+      && verifyBrokerPermissionEvidence(input.evidenceRefs?.brokerPermissionConfirmed);
   }
   const commitEvidence = runtimeCommitEvidence(input, options);
   const privateWorker = evaluatePrivateWorkerReadiness(
@@ -100,6 +127,8 @@ function evaluateOperationalPilotEvidence(input = {}, options = {}) {
     for (const key of FILE_BACKED_EVIDENCE) {
       checks[key] = checks[key] && verifyEvidenceRef(input.evidenceRefs?.[key]);
     }
+    checks.brokerPermissionConfirmed = checks.brokerPermissionConfirmed
+      && verifyBrokerPermissionEvidence(input.evidenceRefs?.brokerPermissionConfirmed);
   }
   const commitEvidence = runtimeCommitEvidence(input, options);
   const privateWorker = evaluatePrivateWorkerReadiness(
@@ -160,5 +189,6 @@ module.exports = {
   evaluateReleaseEvidence,
   deriveReadinessStages,
   verifyEvidenceRef,
+  verifyBrokerPermissionEvidence,
   runtimeCommitEvidence,
 };

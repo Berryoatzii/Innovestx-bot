@@ -10,6 +10,7 @@ const {
   deriveReadinessStages,
   runtimeCommitEvidence,
   verifyEvidenceRef,
+  verifyBrokerPermissionEvidence,
 } = require('../netlify/lib/real-money-release');
 const releaseManifest = require('../config/real-money-release.json');
 
@@ -103,6 +104,30 @@ test('file-backed release evidence is hash-bound and rejects missing or tampered
       uatOrderCycleComplete: { ...reference, sha256: '0'.repeat(64) },
     },
   }).checks.uatOrderCycleComplete, false);
+  assert.equal(evaluateReleaseEvidence({
+    ...releaseManifest,
+    brokerPermissionConfirmed: true,
+    evidenceRefs: {
+      ...releaseManifest.evidenceRefs,
+      brokerPermissionConfirmed: { ...reference, sha256: '0'.repeat(64) },
+    },
+  }).checks.brokerPermissionConfirmed, false);
+});
+
+test('broker permission evidence proves account activation without claiming strategy approval', () => {
+  const fixturePath = path.resolve(__dirname, 'fixtures/broker-open-api-activation.json');
+  const reference = {
+    path: 'tests/fixtures/broker-open-api-activation.json',
+    sha256: crypto.createHash('sha256').update(fs.readFileSync(fixturePath)).digest('hex'),
+  };
+  const unrelatedPath = path.resolve(__dirname, '../package.json');
+  const unrelated = {
+    path: 'package.json',
+    sha256: crypto.createHash('sha256').update(fs.readFileSync(unrelatedPath)).digest('hex'),
+  };
+
+  assert.equal(verifyBrokerPermissionEvidence(reference), true);
+  assert.equal(verifyBrokerPermissionEvidence(unrelated), false);
 });
 
 test('release evidence requires every safety proof and matching audited deployment', () => {
