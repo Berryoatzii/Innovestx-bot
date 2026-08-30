@@ -13,11 +13,16 @@ const REQUIRED_BOOLEAN_EVIDENCE = [
   'strategyReleaseApproved',
 ];
 
-const FILE_BACKED_EVIDENCE = [
+const COMMON_FILE_BACKED_EVIDENCE = [
   'uatOrderCycleComplete',
   'brokerPermissionConfirmed',
   'productionReadOnlyVerified',
   'zeroUnresolvedVerified',
+];
+
+const FULL_RELEASE_FILE_BACKED_EVIDENCE = [
+  ...COMMON_FILE_BACKED_EVIDENCE,
+  'strategyReleaseApproved',
 ];
 
 function verifyEvidenceRef(reference = {}, root = path.resolve(__dirname, '../..')) {
@@ -59,6 +64,34 @@ function verifyBrokerPermissionEvidence(reference = {}, root = path.resolve(__di
     && value.secretMaterialPresent === false;
 }
 
+function verifyStrategyApprovalEvidence(reference = {}, root = path.resolve(__dirname, '../..')) {
+  const evidence = loadVerifiedEvidenceJson(reference, root);
+  if (!evidence) return false;
+  const resolvedRoot = path.resolve(root);
+  const candidatePath = path.resolve(resolvedRoot, 'config/strategy-approval-candidate.json');
+  if (!candidatePath.startsWith(`${resolvedRoot}${path.sep}`)) return false;
+  try {
+    const candidateBytes = fs.readFileSync(candidatePath);
+    const candidate = JSON.parse(candidateBytes.toString('utf8'));
+    const candidateSha256 = crypto.createHash('sha256').update(candidateBytes).digest('hex');
+    const approvedAt = Date.parse(String(evidence.approvedAt || ''));
+    return evidence.evidenceType === 'BROKER_MEMBER_STRATEGY_APPROVAL'
+      && evidence.member === candidate.approvalScope?.member
+      && evidence.approved === true
+      && evidence.candidateId === candidate.candidateId
+      && evidence.strategyVersion === candidate.strategyVersion
+      && evidence.candidateSha256 === candidateSha256
+      && evidence.permissionScope?.place === true
+      && evidence.permissionScope?.change === true
+      && evidence.permissionScope?.cancel === true
+      && Number.isFinite(approvedAt)
+      && evidence.accountIdentifiersRedacted === true
+      && evidence.secretMaterialPresent === false;
+  } catch {
+    return false;
+  }
+}
+
 function runtimeCommitEvidence(input = {}, options = {}) {
   return {
     deployedCommit: String(
@@ -75,11 +108,13 @@ function evaluateReleaseEvidence(input = {}, options = {}) {
     REQUIRED_BOOLEAN_EVIDENCE.map((key) => [key, input[key] === true]),
   );
   if (Number(input.schemaVersion || 0) >= 2) {
-    for (const key of FILE_BACKED_EVIDENCE) {
+    for (const key of FULL_RELEASE_FILE_BACKED_EVIDENCE) {
       checks[key] = checks[key] && verifyEvidenceRef(input.evidenceRefs?.[key]);
     }
     checks.brokerPermissionConfirmed = checks.brokerPermissionConfirmed
       && verifyBrokerPermissionEvidence(input.evidenceRefs?.brokerPermissionConfirmed);
+    checks.strategyReleaseApproved = checks.strategyReleaseApproved
+      && verifyStrategyApprovalEvidence(input.evidenceRefs?.strategyReleaseApproved);
   }
   const commitEvidence = runtimeCommitEvidence(input, options);
   const privateWorker = evaluatePrivateWorkerReadiness(
@@ -124,7 +159,7 @@ function evaluateOperationalPilotEvidence(input = {}, options = {}) {
     requiredEvidence.map((key) => [key, input[key] === true]),
   );
   if (Number(input.schemaVersion || 0) >= 2) {
-    for (const key of FILE_BACKED_EVIDENCE) {
+    for (const key of COMMON_FILE_BACKED_EVIDENCE) {
       checks[key] = checks[key] && verifyEvidenceRef(input.evidenceRefs?.[key]);
     }
     checks.brokerPermissionConfirmed = checks.brokerPermissionConfirmed
@@ -190,5 +225,6 @@ module.exports = {
   deriveReadinessStages,
   verifyEvidenceRef,
   verifyBrokerPermissionEvidence,
+  verifyStrategyApprovalEvidence,
   runtimeCommitEvidence,
 };

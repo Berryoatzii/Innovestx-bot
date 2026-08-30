@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const {
@@ -11,6 +12,7 @@ const {
   runtimeCommitEvidence,
   verifyEvidenceRef,
   verifyBrokerPermissionEvidence,
+  verifyStrategyApprovalEvidence,
 } = require('../netlify/lib/real-money-release');
 const releaseManifest = require('../config/real-money-release.json');
 
@@ -128,6 +130,42 @@ test('broker permission evidence proves account activation without claiming stra
 
   assert.equal(verifyBrokerPermissionEvidence(reference), true);
   assert.equal(verifyBrokerPermissionEvidence(unrelated), false);
+});
+
+test('strategy approval must match the exact candidate hash and explicit order permissions', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aegis-approval-'));
+  const configDir = path.join(root, 'config');
+  fs.mkdirSync(configDir, { recursive: true });
+  const candidate = require('../config/strategy-approval-candidate.json');
+  const candidatePath = path.join(configDir, 'strategy-approval-candidate.json');
+  fs.writeFileSync(candidatePath, `${JSON.stringify(candidate, null, 2)}\n`);
+  const candidateSha256 = crypto.createHash('sha256').update(fs.readFileSync(candidatePath)).digest('hex');
+  const evidencePath = path.join(root, 'strategy-approval.json');
+  const evidence = {
+    evidenceType: 'BROKER_MEMBER_STRATEGY_APPROVAL',
+    member: candidate.approvalScope.member,
+    approved: true,
+    approvedAt: '2026-09-01T10:00:00+07:00',
+    candidateId: candidate.candidateId,
+    strategyVersion: candidate.strategyVersion,
+    candidateSha256,
+    permissionScope: { place: true, change: true, cancel: true },
+    accountIdentifiersRedacted: true,
+    secretMaterialPresent: false,
+  };
+  fs.writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
+  const reference = {
+    path: 'strategy-approval.json',
+    sha256: crypto.createHash('sha256').update(fs.readFileSync(evidencePath)).digest('hex'),
+  };
+
+  assert.equal(verifyStrategyApprovalEvidence(reference, root), true);
+  fs.writeFileSync(evidencePath, `${JSON.stringify({ ...evidence, candidateSha256: '0'.repeat(64) }, null, 2)}\n`);
+  const tamperedReference = {
+    ...reference,
+    sha256: crypto.createHash('sha256').update(fs.readFileSync(evidencePath)).digest('hex'),
+  };
+  assert.equal(verifyStrategyApprovalEvidence(tamperedReference, root), false);
 });
 
 test('release evidence requires every safety proof and matching audited deployment', () => {
