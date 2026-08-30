@@ -2,7 +2,7 @@
 
 Freeze date: 2026-08-31
 
-Status: **HOLD / one development candidate frozen; final holdout unopened**
+Status: **FINAL HOLDOUT PASS / release remains locked**
 
 This evidence is research-only. It used public market history through local tooling and did not contact INVX, Settrade order endpoints, Telegram, Netlify Blobs, or any money-moving path. Production remains locked.
 
@@ -19,7 +19,9 @@ This evidence is research-only. It used public market history through local tool
 
 `AEGIS-DR-ROTATION-RC2-2026-08-31` passed every full-sample and inner-holdout development gate after the eligibility-buffer bug was fixed and regression-tested. At the severe 1% turnover-cost stress, full-sample excess was +0.14%, inner-holdout excess was +1.52%, full-sample maximum drawdown was -2.54%, and inner-holdout maximum drawdown was -0.95%.
 
-The exact universe, implementation hashes, parameters and unopened holdout boundary are recorded in `config/dr-strategy-research-candidate-rc2.json`. This candidate is not eligible for member submission, shadow promotion, or production execution unless the one-time final holdout also passes.
+The exact universe, implementation hashes and parameters are recorded in `config/dr-strategy-research-candidate-rc2.json`. The one-time final holdout from 2024-08 through the last completed month, 2026-07, passed all three friction scenarios: after-cost return +4.34% to +4.66%, benchmark excess +0.35% to +0.51%, and maximum drawdown about -0.95%. Durable evidence is in `config/dr-strategy-final-holdout-rc2.json`.
+
+Passing the final holdout does not authorize an order. Member approval for this exact RC2 strategy, forward shadow evidence, current DR quote/liquidity checks, and per-order human approval remain mandatory.
 
 ## Verification
 

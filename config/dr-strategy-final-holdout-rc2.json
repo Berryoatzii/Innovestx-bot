@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "candidateId": "AEGIS-DR-ROTATION-RC2-2026-08-31",
+  "strategyVersion": "DIVERSIFIED_DR_TREND_BUFFER_V1.0.0",
+  "candidateSha256": "b789d8c63f75db090b789d56c116a92a638a653e7215d7a6097338cb3602438c",
+  "frozenCommit": "c8a2d2d70fc7ec908d3bdfc7d6d3dc0049c2c1b4",
+  "authority": "LOCAL_PUBLIC_MARKET_DATA_READ_ONLY",
+  "finalHoldoutOpened": true,
+  "openedAt": "2026-08-30T18:32:50.208Z",
+  "startMonth": "2024-08",
+  "completedThroughMonth": "2026-07",
+  "passed": true,
+  "scenarios": [
+    {
+      "costRate": 0.00268,
+      "metrics": {
+        "totalReturn": 0.04658645350961699,
+        "benchmarkReturn": 0.04153520081838091,
+        "excessVsBenchmark": 0.0050512526912360745,
+        "maxDrawdown": -0.009392199615113728,
+        "decisions": 23,
+        "positionChanges": 8,
+        "rebalances": 8
+      },
+      "gate": {
+        "passed": true,
+        "checks": {
+          "positiveReturn": true,
+          "positiveExcess": true,
+          "drawdownControlled": true,
+          "enoughDecisions": true,
+          "enoughPositionChanges": true
+        }
+      }
+    },
+    {
+      "costRate": 0.005,
+      "metrics": {
+        "totalReturn": 0.04557183761514083,
+        "benchmarkReturn": 0.04100399700840418,
+        "excessVsBenchmark": 0.004567840606736651,
+        "maxDrawdown": -0.009434775647526372,
+        "decisions": 23,
+        "positionChanges": 8,
+        "rebalances": 8
+      },
+      "gate": {
+        "passed": true,
+        "checks": {
+          "positiveReturn": true,
+          "positiveExcess": true,
+          "drawdownControlled": true,
+          "enoughDecisions": true,
+          "enoughPositionChanges": true
+        }
+      }
+    },
+    {
+      "costRate": 0.01,
+      "metrics": {
+        "totalReturn": 0.043387638562062625,
+        "benchmarkReturn": 0.03985963900616851,
+        "excessVsBenchmark": 0.0035279995558941124,
+        "maxDrawdown": -0.009526534338070047,
+        "decisions": 23,
+        "positionChanges": 8,
+        "rebalances": 8
+      },
+      "gate": {
+        "passed": true,
+        "checks": {
+          "positiveReturn": true,
+          "positiveExcess": true,
+          "drawdownControlled": true,
+          "enoughDecisions": true,
+          "enoughPositionChanges": true
+        }
+      }
+    }
+  ],
+  "releaseLocks": {
+    "memberStrategyApprovalRequired": true,
+    "finalHoldoutRequired": true,
+    "shadowEvidenceRequired": true,
+    "humanApprovalPerOrderRequired": true,
+    "strategyReleaseApproved": false,
+    "liveTradingEnabled": false
+  }
+}
