@@ -4,7 +4,7 @@
   "candidateId": "AEGIS-DR-ROTATION-RC2-2026-08-31",
   "strategyVersion": "DIVERSIFIED_DR_TREND_BUFFER_V1.0.0",
   "candidateSha256": "609a4773b6a9f8bd93e103ba3cd36fa310402adcec4e82d27a187511d4262059",
-  "verifiedAt": "2026-08-31T06:45:59+07:00",
+  "verifiedAt": "2026-08-31T06:59:04+07:00",
   "implementationHashScheme": "SHA256_UTF8_CANONICAL_LF_V1",
   "passed": true,
   "restingLimitOnlyVerified": true,
@@ -16,7 +16,7 @@
   "brokerCalled": false,
   "moneyMoving": false,
   "testResults": {
-    "node": { "passed": 207, "failed": 0 },
+    "node": { "passed": 208, "failed": 0 },
     "pythonGateway": { "passed": 118, "failed": 0 }
   },
   "implementationRefs": [

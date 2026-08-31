@@ -24,7 +24,7 @@ const { runStrategyShadow } = require('./strategy-shadow');
 const { runCoreReview } = require('./core-review');
 const { runSafetyDrill, readSafetyDrillStatus } = require('../lib/operational-safety-drill');
 
-const APP_VERSION = '8.7.0-safety-drill';
+const APP_VERSION = '9.0.0-rc2-forward-shadow';
 const TG_TOKEN = process.env.TELEGRAM_TOKEN || '';
 const TG_CHAT_ID = String(process.env.TELEGRAM_CHAT_ID || '');
 const APPROVER_USER_ID = String(process.env.TELEGRAM_APPROVER_USER_ID || '');
