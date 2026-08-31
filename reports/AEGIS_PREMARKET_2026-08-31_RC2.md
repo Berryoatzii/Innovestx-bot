@@ -96,6 +96,8 @@ card is approved.
 2. Send the exact RC2 strategy/logic/parameter approval request from the user's
    registered personal email only after action-time confirmation.
 3. Verify the deployed commit and `liveTradingEnabled=false`.
+   Use `tools/verify-rc2-deployment.js` and require all checks to pass; the exact
+   procedure is in `docs/AEGIS_RC2_DEPLOY_RUNBOOK.md`.
 4. Start append-only forward-shadow collection. A minimum of 20 real SET trading
    days, six instrument decisions, one rebalance event, and zero integrity/data
    errors is mandatory; no backfill or synthetic day is permitted.
