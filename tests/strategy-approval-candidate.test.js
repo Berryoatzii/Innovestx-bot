@@ -71,3 +71,30 @@ test('approval request is bound to the exact RC2 candidate hash', () => {
   assert.equal(request.includes(candidate.candidateId), true);
   assert.equal(request.includes(candidate.strategyVersion), true);
 });
+
+test('approval email body states the exact frozen scope and risk controls', () => {
+  const requestPath = path.resolve(__dirname, '../docs/AEGIS_STRATEGY_APPROVAL_REQUEST_TH.md');
+  const request = fs.readFileSync(requestPath, 'utf8');
+  const emailBody = request.split('## ร่างข้อความสำหรับส่งจากอีเมลส่วนตัวที่ลงทะเบียน')[1] || '';
+
+  for (const symbol of candidate.approvalScope.symbols) {
+    assert.equal(emailBody.includes(symbol), true, `missing symbol ${symbol}`);
+  }
+  assert.equal(emailBody.includes(candidate.candidateId), true);
+  assert.equal(emailBody.includes(candidate.strategyVersion), true);
+  assert.equal(emailBody.includes('Place/Change/Cancel'), true);
+  assert.equal(emailBody.includes('Resting Limit'), true);
+  assert.equal(emailBody.includes('warm-up 12 เดือน'), true);
+  assert.equal(emailBody.includes('momentum 6 เดือน'), true);
+  assert.equal(emailBody.includes('สูงสุด 3 DR'), true);
+  assert.equal(emailBody.includes('ตัวละ 5%'), true);
+  assert.equal(emailBody.includes('รวมไม่เกิน 15%'), true);
+  assert.equal(emailBody.includes('อันดับ 5'), true);
+  assert.equal(emailBody.includes('เงินสดเป้าหมายขั้นต่ำ 20%'), true);
+  assert.equal(emailBody.includes('1 ออเดอร์/วัน'), true);
+  assert.equal(emailBody.includes('3,500 บาท'), true);
+  assert.equal(emailBody.includes('5,000 บาท'), true);
+  assert.equal(emailBody.includes('automatic broker retry'), true);
+  assert.equal(emailBody.includes('reconcile'), true);
+  assert.equal(emailBody.includes('เอกสารแนบ'), false);
+});

@@ -61,6 +61,8 @@ def probe_existing_gateway(
     open_orders = [item for item in orders if isinstance(item, Mapping) and not BrokerService._is_terminal_order(item)]
     if health.get("ready") is not True or snapshot.get("cashVerified") is not True:
         raise RuntimeError("PRODUCTION_READONLY_NOT_READY")
+    if snapshot.get("cashField") != "cashBalance":
+        raise RuntimeError("PRODUCTION_CASH_FIELD_UNVERIFIED")
 
     portfolio_cost = sum(_number(item.get("qty")) * _number(item.get("avg")) for item in portfolio if isinstance(item, Mapping))
     portfolio_market_value = sum(
@@ -95,6 +97,7 @@ def probe_existing_gateway(
         "productionEnabled": False,
         "gatewayHost": "loopback",
         "cashVerified": True,
+        "cashField": "cashBalance",
         "cash": round(cash, 2),
         "portfolioCount": len(portfolio),
         "portfolioCost": round(portfolio_cost, 2),

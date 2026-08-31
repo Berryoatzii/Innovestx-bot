@@ -32,6 +32,7 @@ class ProductionReadonlyClientProbeTests(unittest.TestCase):
                 return {"ok": True, "environment": "prod", "data": {
                     "cash": 1000.0,
                     "cashVerified": True,
+                    "cashField": "cashBalance",
                     "accountInfo": {"accountType": "CASH_BALANCE", "accountNo": "must-not-leak"},
                     "portfolio": [{"sym": "AAA", "qty": 100, "avg": 10, "mkt": 12}],
                     "orders": [],
@@ -52,6 +53,7 @@ class ProductionReadonlyClientProbeTests(unittest.TestCase):
         self.assertEqual(result["portfolioCost"], 1000.0)
         self.assertEqual(result["portfolioMarketValue"], 1200.0)
         self.assertEqual(result["cashWeight"], round(1000 / 2200, 6))
+        self.assertEqual(result["cashField"], "cashBalance")
         self.assertTrue(result["brokerReadCalled"])
         self.assertFalse(result["brokerMutationCalled"])
         self.assertFalse(result["orderEndpointCalled"])
@@ -76,7 +78,8 @@ class ProductionReadonlyClientProbeTests(unittest.TestCase):
                 return {"ok": True, "environment": "prod", "data": {"ready": True}}
             if path == "/v1/account-snapshot":
                 return {"ok": True, "environment": "prod", "data": {
-                    "cash": 1, "cashVerified": True, "portfolio": [], "orders": [],
+                    "cash": 1, "cashVerified": True, "cashField": "cashBalance",
+                    "portfolio": [], "orders": [],
                 }}
             if path == "/v1/journal/unresolved":
                 return {"ok": True, "environment": "prod", "data": {"operations": []}}

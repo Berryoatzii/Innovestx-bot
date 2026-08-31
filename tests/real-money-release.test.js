@@ -117,9 +117,9 @@ test('file-backed release evidence is hash-bound and rejects missing or tampered
 });
 
 test('broker permission evidence proves account activation without claiming strategy approval', () => {
-  const fixturePath = path.resolve(__dirname, 'fixtures/broker-open-api-activation.json');
+  const fixturePath = path.resolve(__dirname, '../config/evidence/broker-open-api-account-activation.json');
   const reference = {
-    path: 'tests/fixtures/broker-open-api-activation.json',
+    path: 'config/evidence/broker-open-api-account-activation.json',
     sha256: crypto.createHash('sha256').update(fs.readFileSync(fixturePath)).digest('hex'),
   };
   const unrelatedPath = path.resolve(__dirname, '../package.json');

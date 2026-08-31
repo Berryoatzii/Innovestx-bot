@@ -13,14 +13,13 @@ The production lock must remain on.
 
 ## System and release evidence
 
-- Audited code-bearing release commit:
-  `2b831e388a68abafcaa2ada1657b008e9804262a`; subsequent local changes to this
-  brief and the research verdict are documentation-only.
+- Audited local release HEAD before deployment:
+  `52d2aaaa6f792784bd1b268dc6d89d12157d60e6`.
 - Remote production commit: `bf67b87cb8effa203bf8c3b64c0be4cb19510bf0`.
 - The production branch is an ancestor of the release candidate; the update is
-  a 13-commit fast-forward with no history rewrite required.
+  a 20-commit fast-forward with no history rewrite required.
 - Fresh suites after deploy-verifier and shadow-gate hardening: Node
-  **215/215 PASS**; Python gateway **121/121 PASS**.
+  **216/216 PASS**; Python gateway **124/124 PASS**.
 - Production read-only watchdog: **HEALTHY**.
 - UAT read-only account check: **PASS**, zero positions, zero orders, zero
   unresolved operations.
@@ -28,10 +27,17 @@ The production lock must remain on.
   approximately THB 7,316, market value approximately THB 91,782, no open
   orders, and no unresolved operations.
 - A GET-only client probe against the already-running loopback gateway refreshed
-  those figures at 07:48 Asia/Bangkok without creating another SDK session:
+  those figures at 08:12 Asia/Bangkok without creating another SDK session:
   cash THB 7,316.23, 28 holdings, market value THB 91,782, open orders 0, and
   unresolved operations 0. It called no mutation or order endpoint.
-- Account-level Settrade Open API activation: evidenced separately.
+- Account-level Settrade Open API activation is now represented by sanitized,
+  hash-bound evidence at
+  `config/evidence/broker-open-api-account-activation.json`. The reconciler can
+  promote this account gate without promoting strategy approval.
+- The private runtime manifest now verifies execution compatibility against the
+  exact candidate hash. Its remaining full-release blockers are only
+  `RELEASE_STRATEGY_RELEASE_APPROVED` and
+  `RELEASE_FORWARD_SHADOW_VERIFIED`.
 - `strategyReleaseApproved=false`, `forwardShadowVerified=false`, and
   `liveTradingEnabled=false`.
 
