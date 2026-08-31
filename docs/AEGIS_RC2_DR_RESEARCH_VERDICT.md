@@ -25,6 +25,13 @@ Passing the final holdout does not authorize an order. Member approval for this 
 
 ## Verification
 
-- Node suite after freezing: **193/193 passed**.
+- Fresh pre-market verification on 2026-08-31 at approximately 07:23 Asia/Bangkok:
+  **Node 210/210 passed** and **Python gateway 118/118 passed** on release commit
+  `2b831e388a68abafcaa2ada1657b008e9804262a`.
+- The production read-only watchdog returned **HEALTHY** and the UAT read-only
+  check returned **PASS** after the fresh test run. Neither check submitted,
+  changed, or cancelled an order.
 - `strategyReleaseApproved` remains `false`.
+- `forwardShadowVerified` remains `false` until the append-only collector has
+  accumulated the required real SET trading-day evidence.
 - `liveTradingEnabled` remains `false`.
