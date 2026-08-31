@@ -13,7 +13,9 @@ The production lock must remain on.
 
 ## System and release evidence
 
-- Release commit: `2b831e388a68abafcaa2ada1657b008e9804262a`.
+- Audited code-bearing release commit:
+  `2b831e388a68abafcaa2ada1657b008e9804262a`; subsequent local changes to this
+  brief and the research verdict are documentation-only.
 - Remote production commit: `bf67b87cb8effa203bf8c3b64c0be4cb19510bf0`.
 - The production branch is an ancestor of the release candidate; the update is
   a 13-commit fast-forward with no history rewrite required.
