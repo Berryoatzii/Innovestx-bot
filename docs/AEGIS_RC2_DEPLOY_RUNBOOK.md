@@ -68,6 +68,7 @@ broker gateway, never calls an order endpoint, and never moves money.
 
 The scheduled collector runs at 08:45 Asia/Bangkok on SET weekdays. A successful
 deploy does not make `forwardShadowVerified=true`. The gate requires at least 20
-real SET trading days, the required decision/rebalance evidence, a valid hash
-chain, and zero data/broker/order/money-moving violations. Backfill and synthetic
-trading days are forbidden.
+real SET trading days, at least 120 instrument decisions (six instruments on
+each of the 20 clean days), at least one rebalance event, a valid hash chain, and
+zero data/broker/order/money-moving violations. Backfill and synthetic trading
+days are forbidden.

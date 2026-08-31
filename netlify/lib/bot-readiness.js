@@ -6,6 +6,11 @@ const { loadEffectivePortfolioPolicy } = require('./effective-portfolio-policy')
 const { listBacktestResults } = require('./research-results-store');
 const { listDailyReports, evaluateShadowGate } = require('./shadow-performance-store');
 const { getForwardShadowLedger } = require('./dr-forward-shadow-store');
+const {
+  CANDIDATE_SHA256,
+  verifyForwardShadowLedger,
+} = require('./dr-forward-shadow');
+const strategyApprovalCandidate = require('../../config/strategy-approval-candidate.json');
 const { getSnapshot, snapshotFreshness } = require('./fundamental-snapshot-store');
 const { getThesisCard, isThesisApproved } = require('./core-thesis-store');
 const { evaluateFundamentals } = require('./fundamental-scorecard');
@@ -42,6 +47,14 @@ async function inspectCoreEvidence(symbols, event) {
     });
   }
   return rows;
+}
+
+function isVerifiedDrForwardShadow(ledger = {}) {
+  return verifyForwardShadowLedger(ledger, {
+    candidateId: strategyApprovalCandidate.candidateId,
+    strategyVersion: strategyApprovalCandidate.strategyVersion,
+    candidateSha256: CANDIDATE_SHA256,
+  });
 }
 
 async function buildBotReadiness(event = {}) {
@@ -102,7 +115,7 @@ async function buildBotReadiness(event = {}) {
   try {
     const { ledger } = await getForwardShadowLedger(event, 'eventual');
     drForwardShadow = {
-      passed: Boolean(ledger.passed),
+      passed: isVerifiedDrForwardShadow(ledger),
       tradingDays: Number(ledger.tradingDays || 0),
       instrumentDecisionEvents: Number(ledger.instrumentDecisionEvents || 0),
       rebalanceEvents: Number(ledger.rebalanceEvents || 0),
@@ -211,4 +224,9 @@ function readinessText(readiness) {
   return rows.join('\n');
 }
 
-module.exports = { buildBotReadiness, readinessText, inspectCoreEvidence };
+module.exports = {
+  buildBotReadiness,
+  readinessText,
+  inspectCoreEvidence,
+  isVerifiedDrForwardShadow,
+};

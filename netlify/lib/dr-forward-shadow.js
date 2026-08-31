@@ -11,9 +11,9 @@ const { isSetTradingDay } = require('./market-calendar');
 
 const CANDIDATE_SHA256 = '609a4773b6a9f8bd93e103ba3cd36fa310402adcec4e82d27a187511d4262059';
 const MINIMUM_TRADING_DAYS = 20;
-const MINIMUM_INSTRUMENT_DECISIONS = 6;
-const MINIMUM_REBALANCE_EVENTS = 1;
 const EXPECTED_SYMBOLS = candidate.approvalScope.symbols;
+const MINIMUM_INSTRUMENT_DECISIONS = MINIMUM_TRADING_DAYS * EXPECTED_SYMBOLS.length;
+const MINIMUM_REBALANCE_EVENTS = 1;
 const EXPECTED_BENCHMARKS = universe.instruments.map((item) => item.benchmark);
 const EXPECTED_BY_SYMBOL = Object.fromEntries(universe.instruments.map((item) => [item.symbol, item]));
 

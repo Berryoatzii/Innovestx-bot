@@ -26,8 +26,10 @@ Passing the final holdout does not authorize an order. Member approval for this 
 ## Verification
 
 - Fresh pre-market verification on 2026-08-31 at approximately 07:23 Asia/Bangkok:
-  **Node 210/210 passed** and **Python gateway 118/118 passed** on release commit
-  `2b831e388a68abafcaa2ada1657b008e9804262a`.
+  The original audited code baseline passed Node 210/210 and Python gateway
+  118/118. After adding the fail-closed deploy verifier and strengthening the
+  forward-shadow threshold/integrity recheck, the full suites pass
+  **Node 215/215** and **Python gateway 118/118**.
 - The production read-only watchdog returned **HEALTHY** and the UAT read-only
   check returned **PASS** after the fresh test run. Neither check submitted,
   changed, or cancelled an order.

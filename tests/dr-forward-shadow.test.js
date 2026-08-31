@@ -19,8 +19,10 @@ const {
   appendObservation,
   evaluateLatestSignal,
   verifyLedgerIntegrity,
+  MINIMUM_INSTRUMENT_DECISIONS,
 } = require('../netlify/lib/dr-forward-shadow');
 const { verifyForwardShadowEvidence } = require('../netlify/lib/real-money-release');
+const { isVerifiedDrForwardShadow } = require('../netlify/lib/bot-readiness');
 const { runDrForwardShadow } = require('../netlify/functions/dr-forward-shadow');
 
 function monthKey(index) {
@@ -116,6 +118,7 @@ test('forward signal replays the exact frozen quarterly buffer logic', () => {
 test('append-only ledger needs 20 real SET days and one new rebalance month', () => {
   const ledger = completeLedger();
 
+  assert.equal(MINIMUM_INSTRUMENT_DECISIONS, 120);
   assert.equal(ledger.passed, true);
   assert.equal(ledger.tradingDays, 20);
   assert.equal(ledger.instrumentDecisionEvents, 120);
@@ -170,6 +173,16 @@ test('release verifier checks the full hash chain rather than trusting aggregate
   fs.writeFileSync(evidencePath, `${JSON.stringify(ledger, null, 2)}\n`);
   const tampered = { ...reference, sha256: hashFile(evidencePath) };
   assert.equal(verifyForwardShadowEvidence(tampered, root), false);
+});
+
+test('readiness recomputes the RC2 hash chain instead of trusting a stored passed flag', () => {
+  const ledger = completeLedger();
+  assert.equal(isVerifiedDrForwardShadow(ledger), true);
+
+  const tampered = structuredClone(ledger);
+  tampered.observations[0].selectedDrSymbols = [];
+  tampered.passed = true;
+  assert.equal(isVerifiedDrForwardShadow(tampered), false);
 });
 
 test('scheduled collector uses public histories and creates no broker or order state', async () => {

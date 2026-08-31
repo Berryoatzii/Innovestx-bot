@@ -19,7 +19,8 @@ The production lock must remain on.
 - Remote production commit: `bf67b87cb8effa203bf8c3b64c0be4cb19510bf0`.
 - The production branch is an ancestor of the release candidate; the update is
   a 13-commit fast-forward with no history rewrite required.
-- Fresh suites: Node **210/210 PASS**; Python gateway **118/118 PASS**.
+- Fresh suites after deploy-verifier and shadow-gate hardening: Node
+  **215/215 PASS**; Python gateway **118/118 PASS**.
 - Production read-only watchdog: **HEALTHY**.
 - UAT read-only account check: **PASS**, zero positions, zero orders, zero
   unresolved operations.
@@ -99,8 +100,9 @@ card is approved.
    Use `tools/verify-rc2-deployment.js` and require all checks to pass; the exact
    procedure is in `docs/AEGIS_RC2_DEPLOY_RUNBOOK.md`.
 4. Start append-only forward-shadow collection. A minimum of 20 real SET trading
-   days, six instrument decisions, one rebalance event, and zero integrity/data
-   errors is mandatory; no backfill or synthetic day is permitted.
+   days, 120 instrument decisions (six instruments on every clean day), one
+   rebalance event, and zero integrity/data errors is mandatory; no backfill or
+   synthetic day is permitted.
 5. Reassess member approval, compatibility, shadow evidence, current quotes,
    cash reserve, and the exact per-order approval before any pilot.
 
