@@ -20,13 +20,17 @@ The production lock must remain on.
 - The production branch is an ancestor of the release candidate; the update is
   a 13-commit fast-forward with no history rewrite required.
 - Fresh suites after deploy-verifier and shadow-gate hardening: Node
-  **215/215 PASS**; Python gateway **118/118 PASS**.
+  **215/215 PASS**; Python gateway **121/121 PASS**.
 - Production read-only watchdog: **HEALTHY**.
 - UAT read-only account check: **PASS**, zero positions, zero orders, zero
   unresolved operations.
 - Last sanitized production snapshot before this brief: 28 holdings, cash
   approximately THB 7,316, market value approximately THB 91,782, no open
   orders, and no unresolved operations.
+- A GET-only client probe against the already-running loopback gateway refreshed
+  those figures at 07:48 Asia/Bangkok without creating another SDK session:
+  cash THB 7,316.23, 28 holdings, market value THB 91,782, open orders 0, and
+  unresolved operations 0. It called no mutation or order endpoint.
 - Account-level Settrade Open API activation: evidenced separately.
 - `strategyReleaseApproved=false`, `forwardShadowVerified=false`, and
   `liveTradingEnabled=false`.

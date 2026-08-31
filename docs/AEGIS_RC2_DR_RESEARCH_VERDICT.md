@@ -29,7 +29,9 @@ Passing the final holdout does not authorize an order. Member approval for this 
   The original audited code baseline passed Node 210/210 and Python gateway
   118/118. After adding the fail-closed deploy verifier and strengthening the
   forward-shadow threshold/integrity recheck, the full suites pass
-  **Node 215/215** and **Python gateway 118/118**.
+  **Node 215/215** and **Python gateway 121/121**. The additional Python tests
+  cover the sanitized GET-only client probe for an already-running production
+  gateway.
 - The production read-only watchdog returned **HEALTHY** and the UAT read-only
   check returned **PASS** after the fresh test run. Neither check submitted,
   changed, or cancelled an order.
